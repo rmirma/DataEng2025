@@ -6,7 +6,8 @@
 
 The objective of the project is to collect and process the historic data of attendance in Estonian parliamentary sittings and analyse possible correlation between the weather data and the attendance. 
 
-The stakeholders would be Estonian citizens that gain visibility on how environmental factors may influence parliamentary participation and decision-making. The policymakers could use the finding to evaluate the attendance dynamics, optimize sitting schedules or identify patterns in decision-making. 
+The stakeholders would be Estonian citizens that gain visibility on how environmental factors may influence parliamentary participation and decision-making.  
+The policymakers could use the finding to evaluate the attendance dynamics, optimize sitting schedules or identify patterns in decision-making. 
 
 ---
 
@@ -96,7 +97,7 @@ The stakeholders would be Estonian citizens that gain visibility on how environm
 | `DimDate` | Static | Calendar table that contains dates and specifies whether it is a holiday |
 
 
-<img width="1437" height="1600" alt="schema" src="https://github.com/user-attachments/assets/5d7e21a6-28b9-48ed-b0e2-abd9d87eab37" />
+<img width="3447" height="3840" alt="schema" src="https://github.com/user-attachments/assets/2f0a1702-8dd3-4457-b718-8c2936534ad6" />
 
 
 **Facts**
@@ -105,5 +106,4 @@ The stakeholders would be Estonian citizens that gain visibility on how environm
 - `FactVoting`: Records information about each voting session. Columns capture the time of the vote, type of the vote, description, attendee counts and end results of the vote.
 
 
-
-
+[**Demo Queries**](demo_queries.sql)
