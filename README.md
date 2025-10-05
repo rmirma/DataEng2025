@@ -104,12 +104,6 @@ The stakeholders would be Estonian citizens that gain visibility on how environm
 - `FactWeather`: Each row describes the weather of a single hour from each day. Contains precipitation, temperature and cloud coverage.
 - `FactVoting`: Records information about each voting session. Columns capture the time of the vote, type of the vote, description, attendee counts and end results of the vote.
 
-## 7. Demo Queries 
-https://github.com/rmirma/DataEng2025 
-Group members’ roles and contribution
 
-
-
-Contributions: Doris -  34%  Rasmus - 22%  August - 22%  Anton - 22% 
 
 
