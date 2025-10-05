@@ -1,0 +1,272 @@
+CREATE TABLE DimDate (
+  "Date"        DATE PRIMARY KEY,
+  "Weekday"     TEXT,
+  "HolidayInd"  BOOLEAN,
+  "HolidayDesc" TEXT
+);
+
+CREATE TABLE DimMember (
+  "MemberId"   INT PRIMARY KEY,
+  "SrcMemberId" INT,
+  "ValidFrom"  DATE NOT NULL,
+  "ValidTo"    DATE,
+  "MemberName" TEXT NOT NULL,
+  "Party"      TEXT
+);
+
+CREATE TABLE DimSitting (
+  "SittingId"  INT PRIMARY KEY,
+  "Date"       DATE NOT NULL REFERENCES DimDate("Date"),
+  "StartTime"  TIMESTAMP,
+  "EndTime"    TIMESTAMP,
+  "SittingType" TEXT
+);
+
+
+CREATE TABLE FactWeather (
+  "WeatherId"    INT PRIMARY KEY,
+  "Date"         DATE NOT NULL REFERENCES DimDate("Date"),
+  "Time"         TIMESTAMP,
+  "Precipitation" REAL,
+  "AvgTemp"       REAL,
+  "HighTemp"      REAL,
+  "LowTemp"       REAL,
+  "CloudCover"    REAL
+);
+
+CREATE TABLE FactVoting (
+  "VotingId"          INT PRIMARY KEY,
+  "SittingId"         INT NOT NULL REFERENCES DimSitting("SittingId"),
+  "Date"              DATE NOT NULL REFERENCES DimDate("Date"),
+  "VotingType"        TEXT,
+  "VotingDescription" TEXT,
+  "AttendeeCount"     INT,
+  "VotingDecision"    INT
+);
+
+CREATE TABLE FactVotingMember (
+  "VotingId"    INT NOT NULL REFERENCES FactVoting("VotingId"),
+  "MemberId"    INT NOT NULL REFERENCES DimMember("MemberId"),
+  "VotingResult" TEXT,
+  PRIMARY KEY ("VotingId","MemberId")
+);
+
+CREATE INDEX ON FactVoting      ("SittingId");
+CREATE INDEX ON FactVoting      ("Date");
+CREATE INDEX ON FactWeather     ("Date");
+CREATE INDEX ON FactVotingMember("MemberId");
+CREATE INDEX ON DimMember       ("Party");
+CREATE INDEX ON DimMember       ("ValidFrom","ValidTo");
+
+
+
+
+-- Attendance per sitting
+
+
+WITH sitting_mp_base AS (
+  SELECT s."SittingId", s."Date"
+  FROM DimSitting s
+),
+total_mps AS (  -- denominator per sitting date
+  SELECT b."SittingId",
+         COUNT(*) AS total_registered_mps
+  FROM sitting_mp_base b
+  JOIN DimMember m
+    ON m."ValidFrom" <= b."Date"
+   AND (m."ValidTo"   IS NULL OR m."ValidTo" >= b."Date")
+  GROUP BY b."SittingId"
+),
+present_mps AS (  -- numerator per sitting: distinct voters
+  SELECT v."SittingId",
+         COUNT(DISTINCT fvm."MemberId") AS attendees
+  FROM FactVoting v
+  JOIN FactVotingMember fvm
+    ON fvm."VotingId" = v."VotingId"
+  GROUP BY v."SittingId"
+)
+SELECT s."SittingId",
+       s."Date",
+       COALESCE(p.attendees,0) AS attendees,
+       t.total_registered_mps,
+       CASE
+         WHEN t.total_registered_mps = 0 THEN NULL
+         ELSE (COALESCE(p.attendees,0)::DECIMAL / t.total_registered_mps)
+       END AS attendance_rate
+FROM DimSitting s
+JOIN total_mps t ON t."SittingId" = s."SittingId"
+LEFT JOIN present_mps p ON p."SittingId" = s."SittingId"
+ORDER BY s."Date", s."SittingId";
+
+
+
+-- Attendance per party
+
+WITH sitting_dates AS (
+  SELECT "SittingId","Date" FROM DimSitting
+),
+party_snapshot AS (   -- party membership valid on the sitting date
+  SELECT sd."SittingId", sd."Date", m."MemberId", m."Party"
+  FROM sitting_dates sd
+  JOIN DimMember m
+    ON m."ValidFrom" <= sd."Date"
+   AND (m."ValidTo"   IS NULL OR m."ValidTo" >= sd."Date")
+),
+party_denominator AS (  -- total MPs by party on that date
+  SELECT ps."SittingId", ps."Party",
+         COUNT(*) AS party_registered_mps
+  FROM party_snapshot ps
+  GROUP BY ps."SittingId", ps."Party"
+),
+party_numerator AS (    -- distinct present MPs by party
+  SELECT v."SittingId", ps."Party",
+         COUNT(DISTINCT fvm."MemberId") AS party_attendees
+  FROM FactVoting v
+  JOIN FactVotingMember fvm
+    ON fvm."VotingId" = v."VotingId"
+  JOIN party_snapshot ps
+    ON ps."SittingId" = v."SittingId"
+   AND ps."MemberId"  = fvm."MemberId"
+  GROUP BY v."SittingId", ps."Party"
+)
+SELECT d."SittingId",
+       d."Party",
+       COALESCE(n.party_attendees,0) AS party_attendees,
+       d.party_registered_mps,
+       CASE
+         WHEN d.party_registered_mps = 0 THEN NULL
+         ELSE (COALESCE(n.party_attendees,0)::DECIMAL / d.party_registered_mps)
+       END AS attendance_rate_by_party
+FROM party_denominator d
+LEFT JOIN party_numerator n
+  ON n."SittingId" = d."SittingId"
+ AND n."Party"     = d."Party"
+ORDER BY d."SittingId", d."Party";
+
+
+
+-- Consensus per voting
+
+WITH totals AS (
+  SELECT "VotingId", COUNT(*) AS total_votes
+  FROM FactVotingMember
+  GROUP BY "VotingId"
+),
+by_option AS (
+  SELECT "VotingId", "VotingResult", COUNT(*) AS option_votes
+  FROM FactVotingMember
+  GROUP BY "VotingId", "VotingResult"
+),
+max_option AS (
+  SELECT "VotingId", MAX(option_votes) AS max_option_votes
+  FROM by_option
+  GROUP BY "VotingId"
+)
+SELECT v."VotingId",
+       v."SittingId",
+       v."Date",
+       m.max_option_votes,
+       t.total_votes,
+       CASE WHEN t.total_votes = 0 THEN NULL
+            ELSE (m.max_option_votes::DECIMAL / t.total_votes)
+       END AS consensus_rate
+FROM FactVoting v
+JOIN totals   t ON t."VotingId" = v."VotingId"
+JOIN max_option m ON m."VotingId" = v."VotingId"
+ORDER BY v."Date", v."SittingId", v."VotingId";
+
+
+
+-- Weather data for sitting
+
+SELECT
+  s."SittingId",
+  s."Date"        AS sitting_date,
+  s."StartTime",
+  s."EndTime",
+  w."WeatherId",
+  w."Date"        AS weather_date,
+  w."Time",
+  w."Precipitation",
+  w."AvgTemp",
+  w."HighTemp",
+  w."LowTemp",
+  w."CloudCover"
+FROM DimSitting s
+JOIN FactWeather w
+  ON w."Date" = s."Date"
+ AND w."Time" >= COALESCE(s."StartTime", s."Date"::timestamp)               -- start of sitting or day
+ AND w."Time" <  COALESCE(s."EndTime", (s."Date"::timestamp + INTERVAL '1 day')) -- end of sitting or end of day
+WHERE s."SittingId" = :sitting_id
+ORDER BY w."Time";
+
+
+-- Database updates
+
+INSERT INTO DimDate ("Date","Weekday","HolidayInd","HolidayDesc")
+VALUES
+  (:d1, TO_CHAR(:d1, 'Day'), :h1, :hdesc1),
+  (:d2, TO_CHAR(:d2, 'Day'), :h2, :hdesc2)
+ON CONFLICT ("Date") DO UPDATE
+SET "Weekday"     = EXCLUDED."Weekday",
+    "HolidayInd"  = EXCLUDED."HolidayInd",
+    "HolidayDesc" = EXCLUDED."HolidayDesc";
+
+
+INSERT INTO DimMember ("MemberId","SrcMemberId","ValidFrom","ValidTo","MemberName","Party")
+VALUES (:member_id, :src_member_id, :valid_from, NULL, :name, :party)
+ON CONFLICT ("MemberId") DO NOTHING;
+
+BEGIN;
+
+UPDATE DimMember
+SET "ValidTo" = :change_date
+WHERE "SrcMemberId" = :src_member_id
+  AND "ValidFrom"  <= :change_date
+  AND ("ValidTo"    IS NULL OR "ValidTo" > :change_date);
+
+INSERT INTO DimMember ("MemberId","SrcMemberId","ValidFrom","ValidTo","MemberName","Party")
+VALUES (:new_member_id, :src_member_id, :change_date::date, NULL, :name, :new_party);
+
+COMMIT;
+
+INSERT INTO DimSitting ("SittingId","Date","StartTime","EndTime","SittingType")
+VALUES (:sitting_id, :date, :start_ts, :end_ts, :type)
+ON CONFLICT ("SittingId") DO UPDATE
+SET "Date"       = EXCLUDED."Date",
+    "StartTime"  = EXCLUDED."StartTime",
+    "EndTime"    = EXCLUDED."EndTime",
+    "SittingType"= EXCLUDED."SittingType";
+
+
+INSERT INTO FactWeather ("WeatherId","Date","Time","Precipitation","AvgTemp","HighTemp","LowTemp","CloudCover")
+VALUES
+  (:weather_id, :date, :time, :precip, :tavg, :thigh, :tlow, :cloud)
+ON CONFLICT ("WeatherId") DO UPDATE
+SET "Date"         = EXCLUDED."Date",
+    "Time"         = EXCLUDED."Time",
+    "Precipitation"= EXCLUDED."Precipitation",
+    "AvgTemp"      = EXCLUDED."AvgTemp",
+    "HighTemp"     = EXCLUDED."HighTemp",
+    "LowTemp"      = EXCLUDED."LowTemp",
+    "CloudCover"   = EXCLUDED."CloudCover";
+
+
+INSERT INTO FactVoting ("VotingId","SittingId","Date","VotingType","VotingDescription","AttendeeCount","VotingDecision")
+VALUES
+  (:voting_id, :sitting_id, :date, :vtype, :vdesc, NULL, :decision)
+ON CONFLICT ("VotingId") DO UPDATE
+SET "SittingId"         = EXCLUDED."SittingId",
+    "Date"              = EXCLUDED."Date",
+    "VotingType"        = EXCLUDED."VotingType",
+    "VotingDescription" = EXCLUDED."VotingDescription",
+    "VotingDecision"    = EXCLUDED."VotingDecision";
+
+
+INSERT INTO FactVotingMember ("VotingId","MemberId","VotingResult")
+VALUES
+  (:voting_id, :member_id_1, :result_1),
+  (:voting_id, :member_id_2, :result_2),
+  (:voting_id, :member_id_3, :result_3)
+ON CONFLICT ("VotingId","MemberId") DO UPDATE
+SET "VotingResult" = EXCLUDED."VotingResult";  -- in case late corrections arrive
