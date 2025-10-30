@@ -1,0 +1,10 @@
+# Replace the placeholders with your actual credentials locally
+POSTGRES_USER: airflow
+POSTGRES_PASSWORD: airflow
+POSTGRES_DB: airflow
+PGUSER: airflow
+PGPASSWORD: airflow
+PGDATABASE: airflow
+PGADMIN_DEFAULT_EMAIL: admin@example.com
+PGADMIN_DEFAULT_PASSWORD: admin
+CSRF_ENABLED: "False"
