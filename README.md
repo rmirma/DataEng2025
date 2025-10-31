@@ -2,6 +2,43 @@
 
 # Impact of Weather on Estonian Parliamentary Sittings
 
+## Setup Instructions
+1. **Clone the repository**  
+   ```bash
+   git clone <repository-url>
+   cd <repository-directory>
+   ```
+
+2. **Modify values in `.env` as needed:**
+
+3. **Build and start the Docker containers:**    
+   ```bash
+   docker-compose up --build -d
+   ```
+
+4. **Initialize the database schema with airflow-init**  
+   ```bash
+   docker-compose up airflow-init
+   ```
+
+5. **Access Airflow UI:**  
+   Open your web browser and navigate to `http://localhost:8080`.
+   Default credentials:
+   - Username: `airflow`
+   - Password: `airflow`
+6. **Trigger the DAGs:**  
+   In the Airflow UI, locate the DAGs and trigger them to start the data ingestion process.
+
+7. **Access the database:**  
+   Open web browser and navigate to `http://localhost:5050` to access pgAdmin for PostgreSQL database management. 
+   Default credentials:
+   - Email: `admin@example.com`
+   - Password: `admin`
+   Connect to the PostgreSQL server using (default credentials):
+   - Hostname: `airflow-db`
+   - Username: `airflow`
+   - Password: `airflow`
+
 ## 1. Business Brief
 
 The objective of the project is to collect and process the historic data of attendance in Estonian parliamentary sittings and analyse possible correlation between the weather data and the attendance. 
