@@ -1,0 +1,32 @@
+models:
+  - name: FactVoting
+    description: "Fact table of all votings"
+    columns:
+      - name: VotingId
+        description: "Unique identifier for each voting"
+      - name: VotingSrcId
+        description: "Votinf source id"
+      - name: VotingType
+        description: "Reference to the voting type dimension"
+      - name: WeatherId
+        description: "Reference to the weather dimension"
+      - name: Date
+        description: "Date of the voting"
+      - name: StartTime
+        description: "Voting start time"
+      - name: EndTime
+        description: "Voting end time"
+      - name: VotingDescription
+        description: "Description of what the voting is about"
+      - name: Present
+        description: "Number of members who were present"
+	  - name: Absent
+        description: "Number of members who were absent"
+	  - name: InFavour
+        description: "Number of members who voted in favour"
+	  - name: Against
+        description: "Number of members who voted against"
+	  - name: Neutral
+        description: "Number of members who voted neutral"
+
+		  
