@@ -1,218 +1,244 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
-from airflow.hooks.postgres_hook import PostgresHook
 from airflow.models import Variable
+
 import requests
 from datetime import datetime, timedelta
 import pandas as pd
 
+from clickhouse_driver import Client
 
 API_URL = "https://api.riigikogu.ee/api/votings"
-DB_CONN_ID = "postgres_default" 
+
+CH_HOST = "clickhouse-server"
+CH_PORT = 9000
+CH_DB   = "default"
+CH_USER = "clickhouse"
+CH_PASS = "clickhouse"
+
+def _ch() -> Client:
+    return Client(host=CH_HOST, port=CH_PORT, user=CH_USER, password=CH_PASS)
+
+
 
 def create_schema(**context):
-    """Create the parliament_data schema if it doesn't exist."""
-    pg = PostgresHook(postgres_conn_id=DB_CONN_ID)
-    create_schema_sql = "CREATE SCHEMA IF NOT EXISTS parliament_data;"
-    pg.run(create_schema_sql)
-    print("Schema parliament_data created or already exists.")
+    client = _ch()
+    client.execute("CREATE DATABASE IF NOT EXISTS parliament_data")
+    print("Database parliament_data created or already exists.")
 
 def create_tables(**context):
-    """Create database tables if they don't exist."""
-    pg = PostgresHook(postgres_conn_id=DB_CONN_ID)
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS parliament_data.votings (
-        uuid VARCHAR(50) PRIMARY KEY,
-        voting_number INTEGER,
-        type_code VARCHAR(20),
-        type_value TEXT,
-        description TEXT,
-        start_date_time TIMESTAMP,
-        end_date_time TIMESTAMP,
-        present INTEGER,
-        absent INTEGER,
-        in_favor INTEGER,
-        against INTEGER,
-        neutral INTEGER,
-        abstained INTEGER,
-        sitting_title TEXT,
-        sitting_date DATE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+    ddl = """
+    CREATE TABLE IF NOT EXISTS parliament_data.votings
+    (
+        uuid             String,
+        voting_number    Nullable(Int32),
+        type_code        Nullable(String),
+        type_value       Nullable(String),
+        description      Nullable(String),
+        start_date_time  Nullable(DateTime),
+        end_date_time    Nullable(DateTime),
+        present          Nullable(Int32),
+        absent           Nullable(Int32),
+        in_favor         Nullable(Int32),
+        against          Nullable(Int32),
+        neutral          Nullable(Int32),
+        abstained        Nullable(Int32),
+        sitting_title    Nullable(String),
+        sitting_date     Nullable(Date),
+        created_at       DateTime DEFAULT now(),
+        updated_at       DateTime DEFAULT now()
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    PARTITION BY toYYYYMM(sitting_date)
+    ORDER BY (sitting_date, uuid)
+    SETTINGS allow_nullable_key = 1, index_granularity = 8192;
     """
-    pg.run(create_table_sql)
+    client = _ch()
+    client.execute(ddl)
     print("Tables created or already exist.")
 
-def fetch_votings_data(**context):
-    """Fetch votings data from API."""
 
-    # Get date range from Airflow Variables
+
+def fetch_votings_data(**context):
     start_date_str = Variable.get("parliament_start_date", default_var="2024-01-01")
-    end_date_str = Variable.get("parliament_end_date", default_var="2024-12-31")
+    end_date_str   = Variable.get("parliament_end_date",   default_var="2024-12-31")
     start_date = pd.to_datetime(start_date_str).date()
-    end_date = pd.to_datetime(end_date_str).date()
+    end_date   = pd.to_datetime(end_date_str).date()
 
     params = {
-        'startDate': start_date.isoformat(),
-        'endDate': end_date.isoformat(),
-        'lang': 'et'
+        "startDate": start_date.isoformat(),
+        "endDate": end_date.isoformat(),
+        "lang": "et",
     }
 
     try:
         response = requests.get(API_URL, params=params, timeout=30)
         response.raise_for_status()
         votings = response.json()
-        # Store raw data in XCom
-        context['ti'].xcom_push(key='votings_data', value=votings)
+        context["ti"].xcom_push(key="votings_data", value=votings)
         print(f"Fetched {len(votings)} sittings from API for period {start_date} to {end_date}.")
         return votings
     except requests.RequestException as e:
         print(f"Error fetching votings: {e}")
         raise
 
+
+
 def store_votings_data(**context):
-    """Store votings data in database with upsert logic."""
-    sittings = context['ti'].xcom_pull(key='votings_data', task_ids='fetch_votings')
+    sittings = context["ti"].xcom_pull(key="votings_data", task_ids="fetch_votings")
     if not sittings:
         raise ValueError("No sittings data received from previous task.")
 
-    pg = PostgresHook(postgres_conn_id=DB_CONN_ID)
-    inserted_count = 0
-    updated_count = 0
+    start_date_str = Variable.get("parliament_start_date", default_var="2024-01-01")
+    end_date_str   = Variable.get("parliament_end_date",   default_var="2024-12-31")
+    start_date = pd.to_datetime(start_date_str).date()
+    end_date   = pd.to_datetime(end_date_str).date()
 
+    client = Client(host=CH_HOST, port=CH_PORT, user=CH_USER, password=CH_PASS, database=CH_DB)
+
+    # Idempotency: delete existing rows for the date window
+    client.execute(
+        """
+        ALTER TABLE parliament_data.votings
+        DELETE WHERE sitting_date >= %(start)s AND sitting_date <= %(end)s
+        """,
+        {"start": start_date, "end": end_date},
+    )
+
+    rows = []
     for sitting in sittings:
-        sitting_title = sitting.get('title')
-        sitting_date_str = sitting.get('sittingDateTime')
+        sitting_title = sitting.get("title")
+        sitting_date_str = sitting.get("sittingDateTime")
+        sitting_date = None
         if sitting_date_str:
-            sitting_date = datetime.fromisoformat(sitting_date_str.replace('Z', '+00:00')).date()
-        else:
-            sitting_date = None
+            try:
+                sitting_date = datetime.fromisoformat(sitting_date_str.replace("Z", "+00:00")).date()
+            except ValueError:
+                pass
 
-        votings = sitting.get('votings', [])
-        for voting in votings:
-            voting_uuid = voting.get('uuid')
-            voting_number = voting.get('votingNumber')
-            voting_type = voting.get('type', {})
-            type_code = voting_type.get('code')
-            type_value = voting_type.get('value')
-            description = voting.get('description')
-            start_dt_str = voting.get('startDateTime')
-            end_dt_str = voting.get('endDateTime')
-            present = voting.get('present')
-            absent = voting.get('absent')
-            in_favor = voting.get('inFavor')
-            against = voting.get('against')
-            neutral = voting.get('neutral')
-            abstained = voting.get('abstained')
-
+        for voting in sitting.get("votings", []):
+            voting_uuid = voting.get("uuid")
             if not voting_uuid:
                 print(f"Skipping voting without uuid: {voting}")
                 continue
 
+            voting_number = voting.get("votingNumber")
+            voting_type   = voting.get("type", {}) or {}
+            type_code  = voting_type.get("code")
+            type_value = voting_type.get("value")
+            description = voting.get("description")
+
             start_dt = None
-            end_dt = None
+            end_dt   = None
+            start_dt_str = voting.get("startDateTime")
+            end_dt_str   = voting.get("endDateTime")
             try:
                 if start_dt_str:
-                    start_dt = datetime.fromisoformat(start_dt_str.replace('Z', '+00:00'))
+                    start_dt = datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
             except ValueError:
                 print(f"Invalid start_date_time format: {start_dt_str}")
             try:
                 if end_dt_str:
-                    end_dt = datetime.fromisoformat(end_dt_str.replace('Z', '+00:00'))
+                    end_dt = datetime.fromisoformat(end_dt_str.replace("Z", "+00:00"))
             except ValueError:
                 print(f"Invalid end_date_time format: {end_dt_str}")
 
-            # Upsert logic
-            upsert_sql = """
-            INSERT INTO parliament_data.votings (uuid, voting_number, type_code, type_value, description, start_date_time, end_date_time, present, absent, in_favor, against, neutral, abstained, sitting_title, sitting_date, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (uuid) DO UPDATE SET
-                voting_number = EXCLUDED.voting_number,
-                type_code = EXCLUDED.type_code,
-                type_value = EXCLUDED.type_value,
-                description = EXCLUDED.description,
-                start_date_time = EXCLUDED.start_date_time,
-                end_date_time = EXCLUDED.end_date_time,
-                present = EXCLUDED.present,
-                absent = EXCLUDED.absent,
-                in_favor = EXCLUDED.in_favor,
-                against = EXCLUDED.against,
-                neutral = EXCLUDED.neutral,
-                abstained = EXCLUDED.abstained,
-                sitting_title = EXCLUDED.sitting_title,
-                sitting_date = EXCLUDED.sitting_date,
-                updated_at = CURRENT_TIMESTAMP;
-            """
-            pg.run(upsert_sql, parameters=(voting_uuid, voting_number, type_code, type_value, description, start_dt, end_dt, present, absent, in_favor, against, neutral, abstained, sitting_title, sitting_date))
+            present   = voting.get("present")
+            absent    = voting.get("absent")
+            in_favor  = voting.get("inFavor")
+            against   = voting.get("against")
+            neutral   = voting.get("neutral")
+            abstained = voting.get("abstained")
 
-            # Assume all are inserts since uuid is unique
-            inserted_count += 1
+            rows.append((
+                str(voting_uuid),
+                voting_number,
+                type_code,
+                type_value,
+                description,
+                start_dt,
+                end_dt,
+                present,
+                absent,
+                in_favor,
+                against,
+                neutral,
+                abstained,
+                sitting_title,
+                sitting_date,
+                # created_at -> default now()
+                # updated_at -> default now()
+            ))
 
-    print(f"Inserted {inserted_count} votings into database.")
+    if rows:
+        insert_sql = """
+        INSERT INTO parliament_data.votings
+            (uuid, voting_number, type_code, type_value, description,
+            start_date_time, end_date_time, present, absent, in_favor,
+            against, neutral, abstained, sitting_title, sitting_date)
+        VALUES
+        """
+        client.execute(insert_sql, rows)
+        print(f"Inserted {len(rows)} votings into ClickHouse.")
+    else:
+        print("No rows to insert.")
+
+
 
 def data_quality_check(**context):
-    """Perform basic data quality checks."""
-    pg = PostgresHook(postgres_conn_id=DB_CONN_ID)
+    client = Client(host=CH_HOST, port=CH_PORT, user=CH_USER, password=CH_PASS, database=CH_DB)
 
-    # Check for nulls in critical fields
-    null_check_sql = """
-    SELECT COUNT(*) as null_count
-    FROM parliament_data.votings
-    WHERE uuid IS NULL OR voting_number IS NULL OR sitting_date IS NULL;
-    """
-    result = pg.get_first(null_check_sql)
-    null_count = result[0] if result else 0
-
-    if null_count > 0:
+    null_count = client.execute("""
+        SELECT
+            sum(if(isNull(uuid) OR isNull(voting_number) OR isNull(sitting_date), 1, 0)) AS null_count
+        FROM parliament_data.votings
+    """)[0][0]
+    if null_count and null_count > 0:
         raise ValueError(f"Data quality check failed: {null_count} records have null values in critical fields.")
 
-    # Check for duplicates
-    dup_check_sql = """
-    SELECT uuid, COUNT(*) as count
-    FROM parliament_data.votings
-    GROUP BY uuid
-    HAVING COUNT(*) > 1;
-    """
-    duplicates = pg.get_records(dup_check_sql)
-    if duplicates:
-        raise ValueError(f"Data quality check failed: Found duplicate UUIDs: {[row[0] for row in duplicates]}")
+    dups = client.execute("""
+        SELECT uuid, count() AS cnt
+        FROM parliament_data.votings
+        GROUP BY uuid
+        HAVING cnt > 1
+        LIMIT 10
+    """)
+    if dups:
+        dup_list = [row[0] for row in dups]
+        raise ValueError(f"Data quality check failed: Found duplicate UUIDs (sample): {dup_list}")
 
-    # Check date ranges for sitting_date
-    date_check_sql = """
-    SELECT COUNT(*) as invalid_date_count
-    FROM parliament_data.votings
-    WHERE sitting_date < '2012-01-01' OR sitting_date > CURRENT_DATE;
-    """
-    result = pg.get_first(date_check_sql)
-    invalid_date_count = result[0] if result else 0
+    invalid_dates = client.execute("""
+        SELECT count()
+        FROM parliament_data.votings
+        WHERE sitting_date < toDate('2012-01-01') OR sitting_date > today()
+    """)[0][0]
+    if invalid_dates and invalid_dates > 0:
+        raise ValueError(f"Data quality check failed: {invalid_dates} records have invalid dates.")
 
-    if invalid_date_count > 0:
-        raise ValueError(f"Data quality check failed: {invalid_date_count} records have invalid dates.")
+    total = client.execute("SELECT count() FROM parliament_data.votings")[0][0]
+    print(f"Data quality checks passed. Total records: {total}")
 
-    total_records = pg.get_first("SELECT COUNT(*) FROM parliament_data.votings;")[0]
-    print(f"Data quality checks passed. Total records: {total_records}")
 
 
 default_args = {
-    'owner': 'data-eng',
-    'depends_on_past': False,
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    "owner": "data-eng",
+    "depends_on_past": False,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retries": 1,
+    "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(
-    dag_id="parliamentary_ingestion_dag", 
+    dag_id="parliamentary_ingestion_dag",
     default_args=default_args,
-    description="Ingest parliamentary voting data from Riigikogu API",
+    description="Ingest parliamentary voting data from Riigikogu API into ClickHouse (bronze)",
     start_date=days_ago(1),
     schedule_interval="@daily",
     catchup=False,
     max_active_runs=1,
-    tags=['parliament', 'ingestion'],
+    tags=["parliament", "ingestion"],
 ) as dag:
 
     create_schema_task = PythonOperator(
@@ -245,5 +271,4 @@ with DAG(
         provide_context=True,
     )
 
-    # Task dependencies
     create_schema_task >> create_tables_task >> fetch_task >> store_task >> quality_check_task

@@ -1,0 +1,30 @@
+# --- Python / Airflow ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Airflow local storage (DAG bag loads fine without this data)
+pgdata_airflow/
+airflow.db
+airflow.cfg
+webserver_config.py
+
+# --- Docker volumes ---
+clickhouse_data/
+sample_data/
+sql/
+
+*.log
+*.tmp
+*.swp
+*.swo
+
+.DS_Store
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+
+
