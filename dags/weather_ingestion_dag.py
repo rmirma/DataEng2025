@@ -25,8 +25,11 @@ def create_tables(**context):
         id SERIAL PRIMARY KEY,
         date DATE NOT NULL,
         temperature NUMERIC(5, 2),
+        min_temperature NUMERIC(5, 2),
+        max_temperature NUMERIC(5, 2),
         humidity NUMERIC(5, 2),
         wind_speed NUMERIC(5, 2),
+        max_wind_speed NUMERIC(5, 2),
         precipitation NUMERIC(5, 2),
         time TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -57,8 +60,10 @@ def fetch_weather_data(**context):
     df['precipitation'] = pd.to_numeric(df['Tallinn-Harku.3'], errors='coerce')
     df['humidity'] = pd.to_numeric(df['Tallinn-Harku.4'], errors='coerce')
     df['temperature'] = pd.to_numeric(df['Tallinn-Harku.5'], errors='coerce')
+    df['min_temperature'] = pd.to_numeric(df['Tallinn-Harku.6'], errors='coerce')
+    df['max_temperature'] = pd.to_numeric(df['Tallinn-Harku.7'], errors='coerce')
     df['wind_speed'] = pd.to_numeric(df['Tallinn-Harku.9'], errors='coerce')
-
+    df['max_wind_speed'] = pd.to_numeric(df['Tallinn-Harku.10'], errors='coerce')
 
     # Filter to valid records
     df = df.dropna(subset=['date', 'temperature', 'humidity', 'wind_speed', 'precipitation'])
@@ -73,7 +78,7 @@ def fetch_weather_data(**context):
     df['date'] = df['date'].dt.date
     df['time'] = df['time'].dt.strftime('%H:%M:%S')
 
-    weather_data = df[['date', 'time', 'temperature', 'humidity', 'wind_speed', 'precipitation']].to_dict('records')
+    weather_data = df[['date', 'time', 'temperature', 'humidity', 'wind_speed', 'precipitation', 'min_temperature', 'max_temperature', 'max_wind_speed']].to_dict('records')
     context['ti'].xcom_push(key='weather_data', value=weather_data)
     print(f"Fetched {len(weather_data)} valid records from Excel file for date range {start_date} to {end_date}.")
     return weather_data
@@ -89,8 +94,8 @@ def store_weather_data(**context):
     
     for record in weather_data:
         upsert_sql = """
-        INSERT INTO weather_data.historic (date, time, temperature, humidity, wind_speed, precipitation)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO weather_data.historic (date, time, temperature, humidity, wind_speed, precipitation, min_temperature, max_temperature, max_wind_speed)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (date, time) DO NOTHING;  -- Skip duplicates
         """
         try:
@@ -100,7 +105,10 @@ def store_weather_data(**context):
                 record['temperature'],
                 record['humidity'],
                 record['wind_speed'],
-                record['precipitation']
+                record['precipitation'],
+                record['min_temperature'],
+                record['max_temperature'],
+                record['max_wind_speed']
             ))
             stored_count += 1
         except Exception as e:
@@ -144,7 +152,8 @@ with DAG(
     default_args=default_args,
     description="Ingest weather data from .xlsx file",
     start_date=days_ago(1),
-    catchup=False,
+    schedule_interval='@once',
+    catchup=True,
     max_active_runs=1,
     tags=['weather', 'ingestion'],
 ) as dag:
