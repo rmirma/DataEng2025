@@ -16,16 +16,16 @@ services:
     restart: always
 
 
-  # --- pgAdmin UI for both databases ---
-  pgadmin:
-    container_name: pgadmin
-    image: elestio/pgadmin:REL-8_10
-    env_file:
-      - .env
-    ports:
-      - "5050:80"
-    depends_on:
-      - airflow-db
+  # # --- pgAdmin UI for both databases ---
+  # pgadmin:
+  #   container_name: pgadmin
+  #   image: elestio/pgadmin:REL-8_10
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - airflow-db
 
   # --- Airflow Webserver ---
   airflow-webserver:
@@ -97,27 +97,43 @@ services:
     restart: "no"
 
 # --- ClickHouse Server ---
+  # One-shot initializer to fix permissions on the host-mounted ClickHouse data
+  # directory before the server starts. This is idempotent and runs as root.
+  # It helps avoid "rename: Permission denied" errors on bind mounts (dev only).
+  clickhouse-init:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse-init
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R clickhouse:clickhouse /var/lib/clickhouse || true"]
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse/
+    restart: "no"
+
+  # --- ClickHouse Server ---
+  # Use a Docker-managed volume for data to avoid Windows permission issues
   clickhouse-server:
-    # official 'clickhouse' image with a stable LTS tag.
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-server
     env_file:
       - .env
-    image: clickhouse/clickhouse-server
-    container_name: clickhouse-server
     ports:
       - "8123:8123" # HTTP interface
       - "9000:9000" # Native client interface
     volumes:
-      # This persists our database data on our local machine.
-      - ./clickhouse_data:/var/lib/clickhouse/
-      # This makes our local CSVs available inside the container.
+      # Docker-managed volume for ClickHouse data (Linux-native, avoids rename issues)
+      - clickhouse_data:/var/lib/clickhouse
+      # Local CSVs or SQL files for testing/ingestion
       - ./sample_data:/var/lib/clickhouse/user_files
-      # mount SQL to run them via client
       - ./sql:/sql
-    # Best practice from official docs to prevent "too many open files" errors.
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
 
+# Optional one-shot initializer to fix permissions (not needed with Docker volume)
+# clickhouse-init can be removed when using Docker volumes
+
 volumes:
+  # Docker-managed volume replaces the Windows-mounted folder
+  clickhouse_data:
   pgdata_airflow:
