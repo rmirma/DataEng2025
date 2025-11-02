@@ -10,6 +10,7 @@ pgdata_airflow/
 airflow.db
 airflow.cfg
 webserver_config.py
+dbt_project/
 
 # --- Docker volumes ---
 clickhouse_data/
