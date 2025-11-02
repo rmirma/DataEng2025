@@ -28,5 +28,29 @@ models:
         description: "Number of members who voted against"
 	  - name: Neutral
         description: "Number of members who voted neutral"
+  - name: DimWeather
+    description: "Dimension table of the weather, each row corresponds to aggregated weather data over 6h before the voting"
+    columns:
+      - name: WeatherId
+        description: "Unique identifier for each weather row"
+      - name: StartTime
+        description: "Start time of the weather timespan"
+      - name: EndTime
+        description: "End time of the weather timespan"
+      - name: AvgTemp
+        description: "Average temperature over 6h"
+      - name: HighTemp
+        description: "Highest temperature over 6h"
+      - name: LowTemp
+        description: "Lowest temperature over 6h"
+      - name: AvgPrecipitation
+        description: "Average precipitation over 6h"
+      - name: MaxPrecipitation
+        description: "Max precipitation over 6h"
+	  - name: AvgWindSpeed
+        description: "Average wind speed"
+	  - name: MaxWindSpeed
+        description: "Maximum wind speed"
+        
 
 		  
