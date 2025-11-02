@@ -144,3 +144,11 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 
 
 [**Demo Queries**](demo_queries.sql)
+
+
+## 7. Airflow DAGs
+Examples of executed DAGs can be seen on pictures below.
+<img width="1920" height="951" alt="dag1" src="https://github.com/user-attachments/assets/ce1b50dc-36de-43c1-b874-ee32c1814af5" />
+<img width="1920" height="951" alt="dag2" src="https://github.com/user-attachments/assets/6707714f-5ebd-458a-bf00-c74061f797ae" />
+
+
