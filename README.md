@@ -103,7 +103,8 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 
 ## 4. Data Architecture
 
-<img width="752" height="205" alt="diagram" src="https://github.com/user-attachments/assets/c667090a-0e19-4cce-8975-e1ef71044653" />
+<img width="580" height="652" alt="image" src="https://github.com/user-attachments/assets/03ad6263-9ecc-4fc6-918a-fb6611897d9e" />
+
 
 ### Data Quality Checks
 - Each `VotingId` should have **101 records** in `FactVotingMember` table.  
