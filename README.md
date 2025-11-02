@@ -152,3 +152,6 @@ Examples of executed DAGs can be seen on pictures below.
 <img width="1920" height="951" alt="dag2" src="https://github.com/user-attachments/assets/6707714f-5ebd-458a-bf00-c74061f797ae" />
 
 
+## 8. Permission issues
+If you have error related to permission issue, execute the `perm.sh` script with sudo. 
+

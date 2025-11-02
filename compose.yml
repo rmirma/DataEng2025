@@ -106,7 +106,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: ["chown -R clickhouse:clickhouse /var/lib/clickhouse || true"]
     volumes:
-      - ./clickhouse_data:/var/lib/clickhouse/
+      - clickhouse_data:/var/lib/clickhouse/
     restart: "no"
 
   # --- ClickHouse Server ---
