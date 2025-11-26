@@ -1,0 +1,24 @@
+source:
+  type: clickhouse
+  serviceName: clickhouse
+  serviceConnection:
+    config:
+      type: Clickhouse
+      username: clickhouse
+      password: clickhouse
+      hostPort: clickhouse-server:8123
+      databaseSchema: gold
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      schemaFilterPattern:
+        includes:
+          - gold
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: no-auth
+    securityConfig: null

@@ -9,7 +9,10 @@
    cd <repository-directory>
    ```
 
-2. **Modify values in `.env` as needed:**
+2. **Modify values in `.env.example` as needed:**
+   ```bash
+   cp .env.example .env
+   ```
 
 3. **Build and start the Docker containers:**    
    ```bash
@@ -21,23 +24,27 @@
    docker-compose up airflow-init
    ```
 
-5. **Access Airflow UI:**  
-   Open your web browser and navigate to `http://localhost:8080`.
-   Default credentials:
-   - Username: `airflow`
-   - Password: `airflow`
-6. **Trigger the DAGs:**  
+
+5. **Trigger the DAGs:**  
    In the Airflow UI, locate the DAGs and trigger them to start the data ingestion process.
 
-7. **Access the database:**  
-   Open web browser and navigate to `http://localhost:5050` to access pgAdmin for PostgreSQL database management. 
-   Default credentials:
-   - Email: `admin@example.com`
-   - Password: `admin`
-   Connect to the PostgreSQL server using (default credentials):
-   - Hostname: `airflow-db`
-   - Username: `airflow`
-   - Password: `airflow`
+
+6. **Access the services:**  
+   - Airflow UI: `http://localhost:8080` (default credentials: `airflow` / `airflow`)
+   - ClickHouse UI: `http://localhost:8123`
+   - OpenMetadata `http://localhost:8585`.
+   - pgAdmin UI: `http://localhost:5050` (default credentials: `admin@example.com` / `admin`)
+       - Connect to PostgreSQL server:
+         - Hostname: `airflow-db`
+         - Username: `airflow`
+         - Password: `airflow`
+
+7. **Run dbt models and tests:**  
+   ```bash
+   docker-compose exec dbt dbt run --profiles-dir /dbt
+   docker-compose exec dbt dbt test --profiles-dir /dbt
+   ```
+
 
 ## 1. Business Brief
 
@@ -94,7 +101,7 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 
 | Purpose | Tools |
 |----------|-------|
-| Storage | PostgreSQL |
+| Storage | PostgreSQL (Airflow metadata), ClickHouse (data warehouse) |
 | Transformation | dbt |
 | Ingestion | Docker, Airflow |
 | Serving | ClickHouse, Open Metadata |
@@ -103,10 +110,19 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 
 ## 4. Data Architecture
 
+The project follows a medallion architecture with bronze, silver (not implemented), and gold layers.
+
+- **Bronze Layer**: Raw data ingestion from APIs and files into ClickHouse tables (voting, weather).
+- **Gold Layer**: Transformed and aggregated data using dbt, including fact and dimension tables with data quality tests.
+- **Metadata Management**: Tables registered in OpenMetadata for governance and discovery.
+
 <img width="580" height="652" alt="image" src="https://github.com/user-attachments/assets/03ad6263-9ecc-4fc6-918a-fb6611897d9e" />
 
-
 ### Data Quality Checks
+- **dbt Tests**: Implemented in `dbt_project/models/gold/schema.yml`
+  - Not null on foreign keys in fact table (VotingType, WeatherId, Date in FactVoting)
+  - Unique on surrogate keys in dimension tables (Date, VotingType, WeatherId)
+  - Additional not null test on VotingId
 - Each `VotingId` should have **101 records** in `FactVotingMember` table.  
 - **Uniqueness checks** for primary keys of each table:  
   - `VotingId` in `FactVoting`  
@@ -121,6 +137,12 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 ---
 
 ## 5/6. Data Model & Dictionary
+
+### Gold Layer Tables
+- **FactVoting**: Fact table of all votings with aggregated voting results and foreign keys to dimensions.
+- **DimWeather**: Dimension table of weather data aggregated over 6 hours before each voting.
+- **DimDate**: Dimension table for dates including holidays and seasons.
+- **DimVotingType**: Dimension table for voting types.
 
 ### Granularity
 - **FactVotingMember:** One record per voting and member  
@@ -152,7 +174,25 @@ Examples of executed DAGs can be seen on pictures below.
 <img width="1920" height="951" alt="dag1" src="https://github.com/user-attachments/assets/ce1b50dc-36de-43c1-b874-ee32c1814af5" />
 <img width="1920" height="951" alt="dag2" src="https://github.com/user-attachments/assets/6707714f-5ebd-458a-bf00-c74061f797ae" />
 
+## 8. dbt Models and Data Quality
+The project uses dbt for data transformation and testing. The gold layer models are defined in `dbt_project/models/gold/` with schemas and tests in `schema.yml`.
 
-## 8. Permission issues
+To run models and tests:
+```bash
+docker-compose exec dbt dbt run --profiles-dir /dbt
+docker-compose exec dbt dbt test --profiles-dir /dbt
+```
+
+## 9. OpenMetadata
+OpenMetadata is used for metadata management and data discovery. The gold layer tables are automatically ingested and registered.
+
+Access the UI at `http://localhost:8585` to explore tables, columns, and lineage.
+
+To run ingestion manually (if needed):
+```bash
+docker run --rm --network dataeng2025_default -v ${PWD}/clickhouse_ingestion.yaml:/ingestion.yaml openmetadata/ingestion:1.4.0 python -m metadata ingest -c /ingestion.yaml
+```
+
+## 10. Permission issues
 If you have error related to permission issue, execute the `perm.sh` script with sudo. 
 

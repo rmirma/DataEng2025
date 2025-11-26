@@ -3,4 +3,4 @@ SELECT
 	WeekDay,
 	HolidayInd,
 	HolidayDesc	
-FROM file('/data/2024-dates.csv')
+FROM file('/var/lib/clickhouse/user_files/2024-dates.csv')

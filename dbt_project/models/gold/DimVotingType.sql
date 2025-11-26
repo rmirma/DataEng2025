@@ -4,6 +4,8 @@
     incremental_strategy='append'
 ) }}
 
+-- depends_on: {{ ref('FactVoting') }}
+
 SELECT
     toInt32(v.type_code) AS VotingType,
 	v.type_value AS VotingTypeDesc

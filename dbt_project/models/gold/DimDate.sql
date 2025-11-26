@@ -1,8 +1,6 @@
-{{ config(materialized='table') }}
-
 SELECT
 	toDate(d.Date) Date,
-	d.Weekday AS WeekDay,
+	d.WeekDay AS WeekDay,
 	d.HolidayInd AS HolidayInd,
 	d.HolidayDesc AS HolidayDesc,
 	toYear(toDate(d.Date)) AS Year,

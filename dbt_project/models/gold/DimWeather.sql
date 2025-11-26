@@ -4,10 +4,12 @@
     incremental_strategy='append'
 ) }}
 
+-- depends_on: {{ ref('FactVoting') }}
+
 SELECT
-	v.WeatherId AS WeatherId,
-	subtractHours(toStartOfHour(v.StartTime), 6) AS StartTime,
-	toStartOfHour(v.StartTime) AS EndTime,
+	cityHash64(v.uuid) AS WeatherId,
+	subtractHours(toStartOfHour(v.start_date_time), 6) AS StartTime,
+	toStartOfHour(v.start_date_time) AS EndTime,
 	AVG(w.temperature) AvgTemp,
 	MAX(w.max_temperature) AS HighTemp,
 	MIN(w.min_temperature) AS LowTemp,
@@ -18,12 +20,12 @@ SELECT
 	
 FROM {{ ref('voting') }} AS v
 JOIN {{ ref('weather') }} AS w ON 
-	subtractHours(toStartOfHour(v.StartTime), 6) <= toDateTime(concat(toString(w.date), ' ', w.time)) AND 
-	toDateTime(concat(toString(w.date), ' ', w.time)) <= v.StartTime
+	subtractHours(toStartOfHour(v.start_date_time), 6) <= toDateTime(concat(toString(w.date), ' ', w.time)) AND 
+	toDateTime(concat(toString(w.date), ' ', w.time)) <= v.start_date_time
 
 {% if is_incremental() %}
 WHERE v.start_date_time > (SELECT max(StartTime) FROM {{ ref('FactVoting')}})
 {% endif %}
 
 GROUP BY
-    v.WeatherId, v.StartTime
+    cityHash64(v.uuid), v.start_date_time

@@ -17,25 +17,28 @@ services:
 
 
   # # --- pgAdmin UI for both databases ---
-  # pgadmin:
-  #   container_name: pgadmin
-  #   image: elestio/pgadmin:REL-8_10
-  #   env_file:
-  #     - .env
-  #   ports:
-  #     - "5050:80"
-  #   depends_on:
-  #     - airflow-db
+  pgadmin:
+    container_name: pgadmin
+    image: elestio/pgadmin:REL-8_10
+    env_file:
+      - .env
+    ports:
+      - "5050:80"
+    depends_on:
+      - airflow-db
+
 
   # --- Airflow Webserver ---
   airflow-webserver:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: apache/airflow:2.8.1-custom
     container_name: airflow-webserver
     command: webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
     ports:
@@ -45,66 +48,64 @@ services:
       - ./logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-init
-      - airflow-db
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     restart: always
 
   # --- Airflow Scheduler ---
   airflow-scheduler:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: apache/airflow:2.8.1-custom
     container_name: airflow-scheduler
     command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-init
-      - airflow-db
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     restart: always
 
   # --- Airflow DB initialization & user setup ---
   airflow-init:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: apache/airflow:2.8.1-custom
     container_name: airflow-init
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db init
-        airflow users create \
-          --username airflow \
-          --password airflow \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com
+    command: [ "bash", "-c", "airflow db init && airflow users create --username ${AIRFLOW_DB_USER} --password ${AIRFLOW_DB_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com" ]
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-db
+      airflow-db:
+        condition: service_healthy
     restart: "no"
 
-# --- ClickHouse Server ---
+  # --- ClickHouse Server ---
   # One-shot initializer to fix permissions on the host-mounted ClickHouse data
   # directory before the server starts. This is idempotent and runs as root.
   # It helps avoid "rename: Permission denied" errors on bind mounts (dev only).
   clickhouse-init:
     image: clickhouse/clickhouse-server
     container_name: clickhouse-init
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["chown -R clickhouse:clickhouse /var/lib/clickhouse || true"]
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: [ "chown -R clickhouse:clickhouse /var/lib/clickhouse || true" ]
     volumes:
       - clickhouse_data:/var/lib/clickhouse/
     restart: "no"
@@ -123,32 +124,148 @@ services:
       # Docker-managed volume for ClickHouse data (Linux-native, avoids rename issues)
       - clickhouse_data:/var/lib/clickhouse
       # Local CSVs or SQL files for testing/ingestion
-      - ./sample_data:/var/lib/clickhouse/user_files
+      - ./data:/var/lib/clickhouse/user_files
       - ./sql:/sql
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
 
+  # --- ClickHouse Server for OMD ---
+  clickhouse-server-omd:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse-server-omd
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1 # https://clickhouse.com/docs/operations/settings/settings-users#access-setting
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+
+    ports:
+      - "8124:8123" # HTTP interface
+      - "9001:9000" # Native client interface
+    volumes:
+      # This persists our database data on our local machine.
+      - clickhouse-omd-data:/var/lib/clickhouse/
+      # mount SQL to run them via client
+      - ./sql:/sql
+      - ./sample_data:/var/lib/clickhouse/user_files
+    # Best practice from official docs to prevent "too many open files" errors.
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   dbt:
     # dbt container for building and testing ClickHouse models
     build:
-      context: .               # Build context is the current directory
-      dockerfile: Dockerfile   # Use the Dockerfile in this directory to build dbt image
+      context: . # Build context is the current directory
+      dockerfile: Dockerfile.dbt # Use the Dockerfile in this directory to build dbt image
     container_name: dbt
     depends_on:
-      - clickhouse-server      # Ensure ClickHouse starts before dbt
+      - clickhouse-server # Ensure ClickHouse starts before dbt
     volumes:
       - ./sample_data:/var/lib/clickhouse/user_files # Shared folder for input files
-      - ./sql:/sql                                  # Shared SQL scripts
-      - ./dbt_project:/dbt                                  # Mount local dbt project directory
-    working_dir: /dbt          # Set dbt project directory as the working directory
-    tty: true                  # Keep container running for interactive dbt commands
-# Optional one-shot initializer to fix permissions (not needed with Docker volume)
-# clickhouse-init can be removed when using Docker volumes
+      - ./data:/var/lib/clickhouse/user_files_data # Additional data
+      - ./sql:/sql # Shared SQL scripts
+      - ./dbt_project:/dbt # Mount local dbt project directory
+    working_dir: /dbt # Set dbt project directory as the working directory
+    entrypoint: [ "/usr/local/bin/dbt" ]
+    command: [ "test", "--profiles-dir", "/dbt" ]
+    tty: true # Keep container running for interactive dbt commands
+  # Optional one-shot initializer to fix permissions (not needed with Docker volumes)
+  # clickhouse-init can be removed when using Docker volumes
+
+  # --- Elasticsearch for OpenMetadata ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  # --- MySQL for OpenMetadata ---
+  mysql:
+    image: mysql:8.0.32
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  # --- OpenMetadata Server ---
+  openmetadata-server:
+    image: openmetadata/server:1.4.0
+    container_name: openmetadata-server
+    environment:
+      OPENMETADATA_DEBUG: "true"
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST}
+      ELASTICSEARCH_PORT: ${ELASTICSEARCH_PORT}
+      ELASTICSEARCH_SCHEME: ${ELASTICSEARCH_SCHEME}
+      FERNET_KEY: ${FERNET_KEY:-jJ/9sz0g0OHxsfxOoSfdFdmk3ysNmPRnH3TUAbz3IHA=}
+      OM_DATABASE: ${DB_NAME}
+
+    ports:
+      - "8585:8585"
+    # volumes:
+    #   - ./openmetadata_no_auth.yaml:/opt/openmetadata/conf/openmetadata.yaml
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8585/healthcheck" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  # --- OpenMetadata Ingestion ---
+  openmetadata-ingestion:
+    image: openmetadata/ingestion:1.4.0
+    container_name: openmetadata-ingestion
+    depends_on:
+      - openmetadata-server
+    volumes:
+      - ./clickhouse_ingestion.yaml:/opt/airflow/dags/clickhouse_ingestion.yaml
+    command: [ "metadata", "ingest", "-c", "/opt/airflow/dags/clickhouse_ingestion.yaml" ]
+    restart: always
 
 volumes:
   # Docker-managed volume replaces the Windows-mounted folder
   clickhouse_data:
-  pgdata_airflow:
+  ingestion-volume-dag-airflow:
+  ingestion-volume-dags:
+  ingestion-volume-tmp:
+  es-data:
+  clickhouse-omd-data:
+  mysql-data:
+  postgres-db-volume:
