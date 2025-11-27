@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: bronze_weather
+    database: bronze
+    tables:
+      - name: historic
+        description: "Historic weather data"
+
+  - name: bronze_voting
+    database: parliament_data
+    tables:
+      - name: historic
+        description: "Voting results"
+
+  - name: bronze
+    database: bronze
+    tables: 
+      - name: weather_raw
+        description: "Calendar data"
