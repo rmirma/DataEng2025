@@ -19,7 +19,7 @@ SELECT
 	v.against AS Against,
 	v.neutral AS Neutral,
 	v.abstained AS Abstained
-FROM {{ ref('voting') }} AS v
+FROM  {{ source('parliament_data', 'voting') }} AS v
 
 {% if is_incremental() %}
 WHERE v.start_date_time > (SELECT max(StartTime) FROM {{ this }})

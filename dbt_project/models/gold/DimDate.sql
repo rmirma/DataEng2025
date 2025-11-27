@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key='Date',
+    incremental_strategy='append'
+) }}
+
 SELECT
 	toDate(d.Date) Date,
 	d.WeekDay AS WeekDay,
@@ -12,4 +18,4 @@ SELECT
 		WHEN toMonth(toDate(d.Date)) IN (12,1,2) THEN 'Winter'
         ELSE NULL
     END AS Season
-FROM {{ ref('stg_DimDate') }} AS d
+FROM {{ source('bronze', 'weather_raw') }} AS d

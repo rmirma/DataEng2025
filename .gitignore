@@ -14,8 +14,6 @@ webserver_config.py
 
 # --- Docker volumes ---
 clickhouse_data/
-#create table scripts
-!clickhouse_data/init 
 sample_data/
 sql/
 
