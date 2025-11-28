@@ -45,7 +45,7 @@ services:
       - "8080:8080"
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
       airflow-db:
@@ -68,7 +68,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
       airflow-db:
@@ -90,7 +90,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
       airflow-db:
@@ -261,6 +261,7 @@ services:
 
 volumes:
   # Docker-managed volume replaces the Windows-mounted folder
+  airflow-logs:
   clickhouse_data:
   ingestion-volume-dag-airflow:
   ingestion-volume-dags:
