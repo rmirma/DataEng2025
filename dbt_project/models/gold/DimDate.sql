@@ -18,4 +18,4 @@ SELECT
 		WHEN toMonth(toDate(d.Date)) IN (12,1,2) THEN 'Winter'
         ELSE NULL
     END AS Season
-FROM {{ source('bronze', 'weather_raw') }} AS d
+FROM {{ source('bronze', 'date_raw') }} AS d

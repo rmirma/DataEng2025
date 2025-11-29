@@ -47,7 +47,7 @@ PARTITION BY toYYYYMM(sitting_date)
 ORDER BY (sitting_date, uuid)
 SETTINGS allow_nullable_key = 1, index_granularity = 8192;
 
-CREATE TABLE IF NOT EXISTS bronze.weather_raw
+CREATE TABLE IF NOT EXISTS bronze.date_raw
 (
     Date            Date,
 	WeekDay         String,
