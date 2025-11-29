@@ -173,12 +173,14 @@ services:
   superset-db:
     image: postgres:16
     container_name: superset-db
-    env_file:
-      - .env
+    environment:
+      POSTGRES_USER: ${SUPERSET_DB_USER:-superset}
+      POSTGRES_PASSWORD: ${SUPERSET_DB_PASSWORD:-superset}
+      POSTGRES_DB: ${SUPERSET_DB_NAME:-superset}
     volumes:
       - superset-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U superset" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${SUPERSET_DB_USER:-superset}" ]
       interval: 10s
       retries: 5
     restart: always

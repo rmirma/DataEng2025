@@ -1,2 +1,5 @@
 # ClickHouse connector for Superset
 clickhouse-connect
+
+# PostgreSQL driver for Superset metadata database
+psycopg2-binary
