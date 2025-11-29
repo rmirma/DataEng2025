@@ -6,9 +6,6 @@ import subprocess
 from datetime import timedelta
 import os
 
-
-DATA_FILE_PATH = "/opt/airflow/data/Tallinn-Harku-2004-2024.xlsx"
-
 CH_HOST = "clickhouse-server"
 CH_PORT = 9000
 CH_DB   = "default"
