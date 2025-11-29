@@ -1,4 +1,8 @@
 services:
+  # ============================================
+  # AIRFLOW SERVICES
+  # ============================================
+
   # --- Airflow metadata database ---
   airflow-db:
     container_name: airflow-db
@@ -15,7 +19,7 @@ services:
       retries: 5
     restart: always
 
-  # # --- pgAdmin UI for both databases ---
+  # --- pgAdmin UI ---
   pgadmin:
     container_name: pgadmin
     image: elestio/pgadmin:REL-8_10
@@ -42,9 +46,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./dags:/opt/airflow/dags
+      - airflow-dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data
+      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -65,9 +69,9 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
-      - ./dags:/opt/airflow/dags
+      - airflow-dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data
+      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -82,36 +86,26 @@ services:
       dockerfile: Dockerfile
     image: apache/airflow:2.8.1-custom
     container_name: airflow-init
-    command: [ "bash", "-c", "airflow db init && airflow users create --username ${AIRFLOW_DB_USER} --password ${AIRFLOW_DB_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com" ]
+    command: [ "bash", "-c", "airflow db init && airflow users create --username $${AIRFLOW_DB_USER:-admin} --password $${AIRFLOW_DB_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@example.com" ]
     env_file:
       - .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
     volumes:
-      - ./dags:/opt/airflow/dags
+      - airflow-dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data
+      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
     restart: "no"
 
-  # --- ClickHouse Server ---
-  # One-shot initializer to fix permissions on the host-mounted ClickHouse data
-  # directory before the server starts. This is idempotent and runs as root.
-  # It helps avoid "rename: Permission denied" errors on bind mounts (dev only).
-  clickhouse-init:
-    image: clickhouse/clickhouse-server
-    container_name: clickhouse-init
-    entrypoint: [ "/bin/sh", "-c" ]
-    command: [ "chown -R clickhouse:clickhouse /var/lib/clickhouse || true" ]
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse/
-    restart: "no"
+  # ============================================
+  # CLICKHOUSE SERVICES
+  # ============================================
 
   # --- ClickHouse Server ---
-  # Use a Docker-managed volume for data to avoid Windows permission issues
   clickhouse-server:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-server
@@ -123,11 +117,8 @@ services:
       - "8123:8123" # HTTP interface
       - "9000:9000" # Native client interface
     volumes:
-      # Docker-managed volume for ClickHouse data (Linux-native, avoids rename issues)
-      - clickhouse_data:/var/lib/clickhouse
-      # Local CSVs or SQL files for testing/ingestion
-      - ./data:/var/lib/clickhouse/user_files
-      - ./sql:/sql
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-user-files:/var/lib/clickhouse/user_files
     ulimits:
       nofile:
         soft: 262144
@@ -139,48 +130,40 @@ services:
       retries: 5
     restart: always
 
-  # --- ClickHouse Server for OMD ---
+  # --- ClickHouse Server for OpenMetadata ---
   clickhouse-server-omd:
     image: clickhouse/clickhouse-server
     container_name: clickhouse-server-omd
     env_file:
       - .env
     environment:
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1 # https://clickhouse.com/docs/operations/settings/settings-users#access-setting
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
       - "8124:8123" # HTTP interface
       - "9001:9000" # Native client interface
     volumes:
-      # This persists our database data on our local machine.
-      - clickhouse-omd-data:/var/lib/clickhouse/
-      # mount SQL to run them via client
-      - ./sql:/sql
-      - ./sample_data:/var/lib/clickhouse/user_files
-    # Best practice from official docs to prevent "too many open files" errors.
+      - clickhouse-omd-data:/var/lib/clickhouse
+      - clickhouse-omd-user-files:/var/lib/clickhouse/user_files
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
 
+  # --- dbt container ---
   dbt:
-    # dbt container for building and testing ClickHouse models
     build:
-      context: . # Build context is the current directory
-      dockerfile: Dockerfile.dbt # Use the Dockerfile in this directory to build dbt image
+      context: .
+      dockerfile: Dockerfile.dbt
     container_name: dbt
     depends_on:
-      - clickhouse-server # Ensure ClickHouse starts before dbt
+      - clickhouse-server
     volumes:
-      - ./sample_data:/var/lib/clickhouse/user_files # Shared folder for input files
-      - ./data:/var/lib/clickhouse/user_files_data # Additional data
-      - ./sql:/sql # Shared SQL scripts
-      - ./dbt_project:/dbt # Mount local dbt project directory
-    working_dir: /dbt # Set dbt project directory as the working directory
+      - dbt-project:/dbt
+      - clickhouse-user-files:/var/lib/clickhouse/user_files
+    working_dir: /dbt
     entrypoint: [ "/usr/local/bin/dbt" ]
     command: [ "test", "--profiles-dir", "/dbt" ]
-    tty: true # Keep container running for interactive dbt commands
-  # Optional one-shot initializer to fix permissions (not needed with Docker volumes)
-  # clickhouse-init can be removed when using Docker volumes
+    tty: true
 
   # ============================================
   # SUPERSET SERVICES
@@ -199,7 +182,7 @@ services:
     image: postgres:16
     container_name: superset-db
     env_file:
-      - ./superset/docker/.env
+      - .env
     volumes:
       - superset-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -212,9 +195,25 @@ services:
   superset-init:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-init
-    command: [ "/app/docker/docker-init.sh" ]
-    env_file:
-      - ./superset/docker/.env
+    command: >
+      bash -c "
+        pip install --no-cache-dir clickhouse-connect &&
+        superset db upgrade &&
+        superset fab create-admin --username admin --email admin@superset.com --password admin --firstname Superset --lastname Admin || true &&
+        superset init
+      "
+    environment:
+      DATABASE_DB: superset
+      DATABASE_HOST: superset-db
+      DATABASE_PASSWORD: superset
+      DATABASE_USER: superset
+      DATABASE_PORT: 5432
+      DATABASE_DIALECT: postgresql
+      REDIS_HOST: superset-redis
+      REDIS_PORT: 6379
+      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
+      PYTHONPATH: /app/pythonpath
+      SUPERSET_LOAD_EXAMPLES: "no"
     depends_on:
       superset-db:
         condition: service_healthy
@@ -222,7 +221,6 @@ services:
         condition: service_started
     user: "root"
     volumes:
-      - ./superset/docker:/app/docker
       - superset-home:/app/superset_home
     healthcheck:
       disable: true
@@ -232,9 +230,22 @@ services:
   superset:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-app
-    command: [ "/app/docker/docker-bootstrap.sh", "app-gunicorn" ]
-    env_file:
-      - ./superset/docker/.env
+    command: >
+      bash -c "
+        pip install --no-cache-dir clickhouse-connect &&
+        gunicorn --bind 0.0.0.0:8088 --access-logfile - --error-logfile - --workers 2 --worker-class gthread --threads 20 --timeout 60 --limit-request-line 0 --limit-request-field_size 0 'superset.app:create_app()'
+      "
+    environment:
+      DATABASE_DB: superset
+      DATABASE_HOST: superset-db
+      DATABASE_PASSWORD: superset
+      DATABASE_USER: superset
+      DATABASE_PORT: 5432
+      DATABASE_DIALECT: postgresql
+      REDIS_HOST: superset-redis
+      REDIS_PORT: 6379
+      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
+      PYTHONPATH: /app/pythonpath
     ports:
       - "8088:8088"
     depends_on:
@@ -244,7 +255,6 @@ services:
         condition: service_healthy
     user: "root"
     volumes:
-      - ./superset/docker:/app/docker
       - superset-home:/app/superset_home
     restart: always
 
@@ -252,15 +262,27 @@ services:
   superset-worker:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-worker
-    command: [ "/app/docker/docker-bootstrap.sh", "worker" ]
-    env_file:
-      - ./superset/docker/.env
+    command: >
+      bash -c "
+        pip install --no-cache-dir clickhouse-connect &&
+        celery --app=superset.tasks.celery_app:app worker --pool=prefork -O fair -c 4
+      "
+    environment:
+      DATABASE_DB: superset
+      DATABASE_HOST: superset-db
+      DATABASE_PASSWORD: superset
+      DATABASE_USER: superset
+      DATABASE_PORT: 5432
+      DATABASE_DIALECT: postgresql
+      REDIS_HOST: superset-redis
+      REDIS_PORT: 6379
+      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
+      PYTHONPATH: /app/pythonpath
     depends_on:
       superset-init:
         condition: service_completed_successfully
     user: "root"
     volumes:
-      - ./superset/docker:/app/docker
       - superset-home:/app/superset_home
     healthcheck:
       test: [ "CMD-SHELL", "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME" ]
@@ -270,15 +292,27 @@ services:
   superset-worker-beat:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-worker-beat
-    command: [ "/app/docker/docker-bootstrap.sh", "beat" ]
-    env_file:
-      - ./superset/docker/.env
+    command: >
+      bash -c "
+        pip install --no-cache-dir clickhouse-connect &&
+        celery --app=superset.tasks.celery_app:app beat --pidfile /tmp/celerybeat.pid --schedule /tmp/celerybeat-schedule
+      "
+    environment:
+      DATABASE_DB: superset
+      DATABASE_HOST: superset-db
+      DATABASE_PASSWORD: superset
+      DATABASE_USER: superset
+      DATABASE_PORT: 5432
+      DATABASE_DIALECT: postgresql
+      REDIS_HOST: superset-redis
+      REDIS_PORT: 6379
+      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
+      PYTHONPATH: /app/pythonpath
     depends_on:
       superset-init:
         condition: service_completed_successfully
     user: "root"
     volumes:
-      - ./superset/docker:/app/docker
       - superset-home:/app/superset_home
     healthcheck:
       disable: true
@@ -461,19 +495,33 @@ services:
       - ingestion-volume-tmp:/tmp
     restart: always
 
+# ============================================
+# DOCKER-MANAGED VOLUMES
+# ============================================
 volumes:
-  # Docker-managed volume replaces the Windows-mounted folder
+  # Airflow volumes
   airflow-db-data:
+  airflow-dags:
   airflow-logs:
-  clickhouse_data: # Superset volumes
+  airflow-data:
 
+  # ClickHouse volumes
+  clickhouse-data:
+  clickhouse-user-files:
+  clickhouse-omd-data:
+  clickhouse-omd-user-files:
+
+  # dbt volume
+  dbt-project:
+
+  # Superset volumes
   superset-redis-data:
   superset-db-data:
   superset-home:
+
+  # OpenMetadata volumes
+  es-data:
+  mysql-data:
   ingestion-volume-dag-airflow:
   ingestion-volume-dags:
   ingestion-volume-tmp:
-  es-data:
-  clickhouse-omd-data:
-  mysql-data:
-  postgres-db-volume:
