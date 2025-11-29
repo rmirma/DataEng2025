@@ -1,0 +1,14 @@
+name: "parliament"
+version: "1.0.0"
+config-version: 2
+
+profile: "parliament_clickhouse"
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets: ["target"]
+
+models:
+  gold:
+    +schema: "gold"
+    +materialized: table
