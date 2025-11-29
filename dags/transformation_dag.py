@@ -4,7 +4,6 @@ from airflow.utils.dates import days_ago
 from clickhouse_driver import Client
 import subprocess
 from datetime import timedelta
-import clickhouse_connect
 import os
 
 
@@ -16,10 +15,7 @@ CH_DB   = "default"
 CH_USER = "clickhouse"
 CH_PASS = "clickhouse"
 
-
-
 def dbt_transform(**context):
-    client = clickhouse_connect.get_client(host=CH_HOST, username=CH_USER, password=CH_PASS)
 
     cmd = [
         "dbt", "run",
