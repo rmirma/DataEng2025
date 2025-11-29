@@ -3,6 +3,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from clickhouse_driver import Client
 import subprocess
+from datetime import timedelta
 
 
 DATA_FILE_PATH = "/opt/airflow/data/Tallinn-Harku-2004-2024.xlsx"
