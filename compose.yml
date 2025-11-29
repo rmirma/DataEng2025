@@ -137,14 +137,14 @@ services:
     # dbt container for building and testing ClickHouse models
     build:
       context: .               # Build context is the current directory
-      dockerfile: dbt_project/Dockerfile  # Use the Dockerfile in this directory to build dbt image
+      dockerfile: dbt/Dockerfile  # Use the Dockerfile in this directory to build dbt image
     container_name: dbt
     depends_on:
       - clickhouse-server      # Ensure ClickHouse starts before dbt
     volumes:
       - ./sample_data:/var/lib/clickhouse/user_files # Shared folder for input files
       - ./sql:/sql                                  # Shared SQL scripts
-      - ./dbt_project:/dbt                                  # Mount local dbt project directory
+      - ./dbt:/dbt                                  # Mount local dbt project directory
     working_dir: /dbt         # Set dbt project directory as the working directory
     tty: true                  # Keep container running for interactive dbt commands
 # Optional one-shot initializer to fix permissions (not needed with Docker volume)

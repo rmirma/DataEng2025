@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: bronze_weather
-    database: bronze
+    database: weather_data
     tables:
       - name: historic
         description: "Historic weather data"
@@ -10,7 +10,7 @@ sources:
   - name: bronze_voting
     database: parliament_data
     tables:
-      - name: historic
+      - name: votings
         description: "Voting results"
 
   - name: bronze
