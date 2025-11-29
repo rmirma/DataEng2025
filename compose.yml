@@ -46,9 +46,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - airflow-dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
       - airflow-logs:/opt/airflow/logs
-      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -69,9 +69,9 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
-      - airflow-dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
       - airflow-logs:/opt/airflow/logs
-      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -93,9 +93,9 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
     volumes:
-      - airflow-dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
       - airflow-logs:/opt/airflow/logs
-      - airflow-data:/opt/airflow/data
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -246,6 +246,11 @@ services:
       REDIS_PORT: 6379
       SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
       PYTHONPATH: /app/pythonpath
+      SUPERSET_PERMANENT_SESSION_LIFETIME: "86400"
+      WTF_CSRF_ENABLED: "False"
+      SESSION_TYPE: "redis"
+      SESSION_REDIS_HOST: superset-redis
+      SESSION_REDIS_PORT: "6379"
     ports:
       - "8088:8088"
     depends_on:
@@ -501,9 +506,7 @@ services:
 volumes:
   # Airflow volumes
   airflow-db-data:
-  airflow-dags:
   airflow-logs:
-  airflow-data:
 
   # ClickHouse volumes
   clickhouse-data:
