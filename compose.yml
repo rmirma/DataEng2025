@@ -38,11 +38,8 @@ services:
     image: apache/airflow:2.8.1-custom
     container_name: airflow-webserver
     command: webserver
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     volumes:
@@ -64,10 +61,8 @@ services:
     image: apache/airflow:2.8.1-custom
     container_name: airflow-scheduler
     command: scheduler
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    env_file:
+      - .env
     volumes:
       - ./dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
@@ -89,9 +84,6 @@ services:
     command: [ "bash", "-c", "airflow db init && airflow users create --username $${AIRFLOW_DB_USER:-admin} --password $${AIRFLOW_DB_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@example.com" ]
     env_file:
       - .env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
     volumes:
       - ./dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
@@ -195,25 +187,11 @@ services:
   superset-init:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-init
-    command: >
-      bash -c "
-        pip install --no-cache-dir clickhouse-connect &&
-        superset db upgrade &&
-        superset fab create-admin --username admin --email admin@superset.com --password admin --firstname Superset --lastname Admin || true &&
-        superset init
-      "
+    command: bash /app/docker/docker-init.sh
+    env_file:
+      - ./superset/docker/.env
     environment:
-      DATABASE_DB: superset
-      DATABASE_HOST: superset-db
-      DATABASE_PASSWORD: superset
-      DATABASE_USER: superset
-      DATABASE_PORT: 5432
-      DATABASE_DIALECT: postgresql
-      REDIS_HOST: superset-redis
-      REDIS_PORT: 6379
-      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
-      PYTHONPATH: /app/pythonpath
-      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
     depends_on:
       superset-db:
         condition: service_healthy
@@ -222,6 +200,7 @@ services:
     user: "root"
     volumes:
       - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
     healthcheck:
       disable: true
     restart: "no"
@@ -230,27 +209,11 @@ services:
   superset:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-app
-    command: >
-      bash -c "
-        pip install --no-cache-dir clickhouse-connect &&
-        gunicorn --bind 0.0.0.0:8088 --access-logfile - --error-logfile - --workers 2 --worker-class gthread --threads 20 --timeout 60 --limit-request-line 0 --limit-request-field_size 0 'superset.app:create_app()'
-      "
+    command: bash /app/docker/docker-bootstrap.sh app-gunicorn
+    env_file:
+      - ./superset/docker/.env
     environment:
-      DATABASE_DB: superset
-      DATABASE_HOST: superset-db
-      DATABASE_PASSWORD: superset
-      DATABASE_USER: superset
-      DATABASE_PORT: 5432
-      DATABASE_DIALECT: postgresql
-      REDIS_HOST: superset-redis
-      REDIS_PORT: 6379
-      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
-      PYTHONPATH: /app/pythonpath
-      SUPERSET_PERMANENT_SESSION_LIFETIME: "86400"
-      WTF_CSRF_ENABLED: "False"
-      SESSION_TYPE: "redis"
-      SESSION_REDIS_HOST: superset-redis
-      SESSION_REDIS_PORT: "6379"
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
     ports:
       - "8088:8088"
     depends_on:
@@ -261,34 +224,25 @@ services:
     user: "root"
     volumes:
       - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
     restart: always
 
   # --- Superset Celery Worker ---
   superset-worker:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-worker
-    command: >
-      bash -c "
-        pip install --no-cache-dir clickhouse-connect &&
-        celery --app=superset.tasks.celery_app:app worker --pool=prefork -O fair -c 4
-      "
+    command: bash /app/docker/docker-bootstrap.sh worker
+    env_file:
+      - ./superset/docker/.env
     environment:
-      DATABASE_DB: superset
-      DATABASE_HOST: superset-db
-      DATABASE_PASSWORD: superset
-      DATABASE_USER: superset
-      DATABASE_PORT: 5432
-      DATABASE_DIALECT: postgresql
-      REDIS_HOST: superset-redis
-      REDIS_PORT: 6379
-      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
-      PYTHONPATH: /app/pythonpath
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
     depends_on:
       superset-init:
         condition: service_completed_successfully
     user: "root"
     volumes:
       - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
     healthcheck:
       test: [ "CMD-SHELL", "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME" ]
     restart: always
@@ -297,28 +251,18 @@ services:
   superset-worker-beat:
     image: apachesuperset.docker.scarf.sh/apache/superset:latest
     container_name: superset-worker-beat
-    command: >
-      bash -c "
-        pip install --no-cache-dir clickhouse-connect &&
-        celery --app=superset.tasks.celery_app:app beat --pidfile /tmp/celerybeat.pid --schedule /tmp/celerybeat-schedule
-      "
+    command: bash /app/docker/docker-bootstrap.sh beat
+    env_file:
+      - ./superset/docker/.env
     environment:
-      DATABASE_DB: superset
-      DATABASE_HOST: superset-db
-      DATABASE_PASSWORD: superset
-      DATABASE_USER: superset
-      DATABASE_PORT: 5432
-      DATABASE_DIALECT: postgresql
-      REDIS_HOST: superset-redis
-      REDIS_PORT: 6379
-      SUPERSET_SECRET_KEY: SUp3r$3cReT_kEy_f0R_dAtA_eNg1n33RiNg_Pr0j3cT_2025!
-      PYTHONPATH: /app/pythonpath
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
     depends_on:
       superset-init:
         condition: service_completed_successfully
     user: "root"
     volumes:
       - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
     healthcheck:
       disable: true
     restart: always
