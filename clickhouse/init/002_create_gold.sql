@@ -15,7 +15,7 @@ ORDER BY Date;
 
 CREATE TABLE IF NOT EXISTS gold.DimVotingType
 (
-	VotingType Int32
+	VotingType Int32,
     VotingTypeDesc String
 )
 ENGINE = MergeTree
@@ -39,7 +39,7 @@ ENGINE = MergeTree
 ORDER BY WeatherId;
 
 
-CREATE TABLE IF NOT EXISTS VotingId
+CREATE TABLE IF NOT EXISTS gold.Voting
 (
     VotingId UInt64,
     VotingSrcId String,
@@ -57,4 +57,4 @@ CREATE TABLE IF NOT EXISTS VotingId
 	Abstained Int32
 )
 ENGINE = MergeTree
-ORDER BY genre_id;
+ORDER BY VotingId;
