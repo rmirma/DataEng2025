@@ -4,6 +4,8 @@ from airflow.utils.dates import days_ago
 from clickhouse_driver import Client
 import subprocess
 from datetime import timedelta
+import clickhouse_connect
+import os
 
 
 DATA_FILE_PATH = "/opt/airflow/data/Tallinn-Harku-2004-2024.xlsx"
@@ -28,11 +30,6 @@ def dbt_transform(**context):
     env = os.environ.copy()
     env["DBT_SCHEMA"] = "_gold"
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-    if result.returncode != 0:
-        raise AirflowFailException(f"dbt run failed:\n{result.stdout}\n{result.stderr}")
-    return result.stdout
-
 
 default_args = {
     "owner": "data-eng",
