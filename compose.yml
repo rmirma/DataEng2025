@@ -137,7 +137,7 @@ services:
     # dbt container for building and testing ClickHouse models
     build:
       context: .               # Build context is the current directory
-      dockerfile: Dockerfile   # Use the Dockerfile in this directory to build dbt image
+      dockerfile: dbt_project/Dockerfile  # Use the Dockerfile in this directory to build dbt image
     container_name: dbt
     depends_on:
       - clickhouse-server      # Ensure ClickHouse starts before dbt
