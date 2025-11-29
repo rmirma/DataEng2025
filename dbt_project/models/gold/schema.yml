@@ -4,14 +4,22 @@ models:
     columns:
       - name: VotingId
         description: "Unique identifier for each voting"
+        tests:
+          - not_null
       - name: VotingSrcId
-        description: "Votinf source id"
+        description: "Voting source id"
       - name: VotingType
         description: "Reference to the voting type dimension"
+        tests:
+          - not_null
       - name: WeatherId
         description: "Reference to the weather dimension"
+        tests:
+          - not_null
       - name: Date
         description: "Date of the voting"
+        tests:
+          - not_null
       - name: StartTime
         description: "Voting start time"
       - name: EndTime
@@ -20,19 +28,21 @@ models:
         description: "Description of what the voting is about"
       - name: Present
         description: "Number of members who were present"
-	  - name: Absent
+      - name: Absent
         description: "Number of members who were absent"
-	  - name: InFavour
+      - name: InFavour
         description: "Number of members who voted in favour"
-	  - name: Against
+      - name: Against
         description: "Number of members who voted against"
-	  - name: Neutral
+      - name: Neutral
         description: "Number of members who voted neutral"
   - name: DimWeather
     description: "Dimension table of the weather, each row corresponds to aggregated weather data over 6h before the voting"
     columns:
       - name: WeatherId
         description: "Unique identifier for each weather row"
+        tests:
+          - unique
       - name: StartTime
         description: "Start time of the weather timespan"
       - name: EndTime
@@ -47,10 +57,35 @@ models:
         description: "Average precipitation over 6h"
       - name: MaxPrecipitation
         description: "Max precipitation over 6h"
-	  - name: AvgWindSpeed
+      - name: AvgWindSpeed
         description: "Average wind speed"
-	  - name: MaxWindSpeed
+      - name: MaxWindSpeed
         description: "Maximum wind speed"
-        
-
-		  
+  - name: DimDate
+    description: "Dimension table for dates"
+    columns:
+      - name: Date
+        description: "The date"
+        tests:
+          - unique
+      - name: WeekDay
+        description: "Day of the week"
+      - name: HolidayInd
+        description: "Indicator if it's a holiday"
+      - name: HolidayDesc
+        description: "Description of the holiday"
+      - name: Year
+        description: "Year of the date"
+      - name: Month
+        description: "Month of the date"
+      - name: Season
+        description: "Season of the year"
+  - name: DimVotingType
+    description: "Dimension table for voting types"
+    columns:
+      - name: VotingType
+        description: "Unique identifier for voting type"
+        tests:
+          - unique
+      - name: VotingTypeDesc
+        description: "Description of the voting type"

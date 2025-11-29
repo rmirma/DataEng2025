@@ -15,11 +15,11 @@ SELECT
     v.description AS VotingDescription,
     v.present AS Present,
     v.absent AS Absent,
-    v.in_favour AS InFavour,
+    v.in_favor AS InFavour,
 	v.against AS Against,
 	v.neutral AS Neutral,
 	v.abstained AS Abstained
-FROM {{ ref('voting') }} AS v
+FROM  {{ source('parliament_data', 'voting') }} AS v
 
 {% if is_incremental() %}
 WHERE v.start_date_time > (SELECT max(StartTime) FROM {{ this }})
@@ -33,7 +33,7 @@ GROUP BY
     v.description,
     v.present,
     v.absent,
-    v.in_favour,
+    v.in_favor,
 	v.against,
 	v.neutral,
 	v.abstained
