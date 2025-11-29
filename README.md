@@ -3,47 +3,56 @@
 # Impact of Weather on Estonian Parliamentary Sittings
 
 ## Setup Instructions
+
 1. **Clone the repository**  
    ```bash
    git clone <repository-url>
-   cd <repository-directory>
+   cd DataEng2025
    ```
 
-2. **Modify values in `.env.example` as needed:**
+2. **Create environment file:**
    ```bash
    cp .env.example .env
    ```
 
 3. **Build and start the Docker containers:**    
    ```bash
-   docker-compose up --build -d
+   docker compose up --build -d
    ```
+   This will automatically initialize all databases and services.
 
-4. **Initialize the database schema with airflow-init**  
+4. **Run dbt to create gold layer models:**
    ```bash
-   docker-compose up airflow-init
+   docker run --rm --network dataeng2025_default -v "${PWD}/dbt_project:/dbt" -w /dbt python:3.9-slim bash -c "pip install --quiet dbt-clickhouse && dbt run --profiles-dir /dbt"
    ```
-
 
 5. **Trigger the DAGs:**  
-   In the Airflow UI, locate the DAGs and trigger them to start the data ingestion process.
-
+   In the Airflow UI, locate and trigger the DAGs to start data ingestion.
 
 6. **Access the services:**  
-   - Airflow UI: `http://localhost:8080` (default credentials: `airflow` / `airflow`)
-   - ClickHouse UI: `http://localhost:8123`
-   - OpenMetadata `http://localhost:8585`.
-   - pgAdmin UI: `http://localhost:5050` (default credentials: `admin@example.com` / `admin`)
-       - Connect to PostgreSQL server:
-         - Hostname: `airflow-db`
-         - Username: `airflow`
-         - Password: `airflow`
 
-7. **Run dbt models and tests:**  
-   ```bash
-   docker-compose exec dbt dbt run --profiles-dir /dbt
-   docker-compose exec dbt dbt test --profiles-dir /dbt
-   ```
+   | Service | URL | Credentials |
+   |---------|-----|-------------|
+   | Airflow | http://localhost:8080 | `airflow` / `airflow` |
+   | Superset | http://localhost:8088 | `admin` / `admin` |
+   | OpenMetadata | http://localhost:8585 | `admin` / `admin` |
+   | ClickHouse | http://localhost:8123 | `default` / (empty) |
+   | pgAdmin | http://localhost:5050 | `admin@example.com` / `admin` |
+
+### Superset - Connect to ClickHouse
+1. Go to **Settings → Database Connections → + Database**
+2. Select **ClickHouse Connect**
+3. Use SQLAlchemy URI: `clickhousedb://default@clickhouse-server:8123/default_gold`
+
+### OpenMetadata - Register ClickHouse Tables
+1. Go to **Settings → Services → Databases → Add New Service**
+2. Select **ClickHouse** and configure:
+   - Host: `clickhouse-server`
+   - Port: `8123`
+   - Username: `default`
+   - Database: `default_gold`
+3. Run metadata ingestion to discover tables
+
 
 
 ## 1. Business Brief
@@ -104,7 +113,9 @@ The policymakers could use the finding to evaluate the attendance dynamics, opti
 | Storage | PostgreSQL (Airflow metadata), ClickHouse (data warehouse) |
 | Transformation | dbt |
 | Ingestion | Docker, Airflow |
-| Serving | ClickHouse, Open Metadata |
+| Visualization | Apache Superset |
+| Metadata Management | OpenMetadata |
+| Serving | ClickHouse |
 
 ---
 
@@ -175,24 +186,58 @@ Examples of executed DAGs can be seen on pictures below.
 <img width="1920" height="951" alt="dag2" src="https://github.com/user-attachments/assets/6707714f-5ebd-458a-bf00-c74061f797ae" />
 
 ## 8. dbt Models and Data Quality
-The project uses dbt for data transformation and testing. The gold layer models are defined in `dbt_project/models/gold/` with schemas and tests in `schema.yml`.
 
-To run models and tests:
+The project uses dbt for data transformation and testing. Models are in `dbt_project/models/` with bronze and gold layers.
+
+### Gold Layer Tables
+| Table | Description |
+|-------|-------------|
+| `FactVoting` | Central fact table with voting sessions, attendance counts, and results |
+| `DimWeather` | Weather conditions aggregated over 6 hours before each voting |
+| `DimDate` | Calendar dimension with weekdays, holidays, and seasons |
+| `DimVotingType` | Voting type categories |
+
+### Data Quality Tests (in `schema.yml`)
+- **Not null** on foreign keys: `VotingType`, `WeatherId`, `Date` in FactVoting
+- **Unique** on surrogate keys: `VotingId`, `WeatherId`, `Date`, `VotingType`
+- **Relationships** tests validating foreign key integrity
+- **Not null** on `Present` column (attendance count)
+
+Run tests:
 ```bash
-docker-compose exec dbt dbt run --profiles-dir /dbt
-docker-compose exec dbt dbt test --profiles-dir /dbt
+docker run --rm --network dataeng2025_default -v "${PWD}/dbt_project:/dbt" -w /dbt python:3.9-slim bash -c "pip install --quiet dbt-clickhouse && dbt test --profiles-dir /dbt"
 ```
 
 ## 9. OpenMetadata
-OpenMetadata is used for metadata management and data discovery. The gold layer tables are automatically ingested and registered.
 
-Access the UI at `http://localhost:8585` to explore tables, columns, and lineage.
+OpenMetadata provides metadata management and data discovery. Access at http://localhost:8585.
 
-To run ingestion manually (if needed):
+The ingestion service runs automatically and can be configured via the UI to discover ClickHouse tables.
+
+## 10. Superset Dashboard
+
+Apache Superset provides interactive dashboards for visualizing voting and weather data.
+
+Access at http://localhost:8088 (credentials: `admin` / `admin`).
+
+### Creating Charts
+Example charts to answer business questions:
+- **Temperature vs Attendance**: Bar chart showing average attendance by temperature range
+- **Voting by Day of Week**: Pie chart showing voting distribution across weekdays
+- **Weather Impact on Consensus**: Line chart comparing weather metrics to consensus rate
+
+## 11. Troubleshooting
+
+### Permission Issues (Linux/WSL)
+If you encounter permission errors, run:
 ```bash
-docker run --rm --network dataeng2025_default -v ${PWD}/clickhouse_ingestion.yaml:/ingestion.yaml openmetadata/ingestion:1.4.0 python -m metadata ingest -c /ingestion.yaml
+chmod +x perm.sh && sudo ./perm.sh
 ```
 
-## 10. Permission issues
-If you have error related to permission issue, execute the `perm.sh` script with sudo. 
+### Docker Issues
+If Docker Desktop has issues, restart it or run:
+```bash
+docker compose down
+docker compose up -d
+``` 
 

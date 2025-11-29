@@ -1,0 +1,2 @@
+# ClickHouse connector for Superset
+clickhouse-connect

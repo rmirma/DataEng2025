@@ -1,91 +1,111 @@
 models:
   - name: FactVoting
-    description: "Fact table of all votings"
+    description: "Central fact table recording all parliamentary voting sessions. Each row represents one voting event with attendance and result metrics linked to weather and date dimensions."
     columns:
       - name: VotingId
-        description: "Unique identifier for each voting"
-        tests:
+        description: "Unique surrogate key for each voting session, auto-generated for warehouse identification."
+        data_tests:
           - not_null
+          - unique
       - name: VotingSrcId
-        description: "Voting source id"
+        description: "Original source system identifier for the voting, used for data lineage and reconciliation."
       - name: VotingType
-        description: "Reference to the voting type dimension"
-        tests:
+        description: "Foreign key referencing DimVotingType. Indicates the category of vote (e.g., procedural, legislative)."
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('DimVotingType')
+              field: VotingType
       - name: WeatherId
-        description: "Reference to the weather dimension"
-        tests:
+        description: "Foreign key referencing DimWeather. Links voting to weather conditions in the 6 hours prior."
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('DimWeather')
+              field: WeatherId
       - name: Date
-        description: "Date of the voting"
-        tests:
+        description: "Foreign key referencing DimDate. The calendar date when the voting took place."
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('DimDate')
+              field: Date
       - name: StartTime
-        description: "Voting start time"
+        description: "Timestamp when the voting session began."
       - name: EndTime
-        description: "Voting end time"
+        description: "Timestamp when the voting session concluded."
       - name: VotingDescription
-        description: "Description of what the voting is about"
+        description: "Free-text summary explaining the purpose and subject matter of the vote."
       - name: Present
-        description: "Number of members who were present"
+        description: "Count of parliament members physically present during the voting session."
+        data_tests:
+          - not_null
       - name: Absent
-        description: "Number of members who were absent"
+        description: "Count of parliament members who did not attend the voting session."
       - name: InFavour
-        description: "Number of members who voted in favour"
+        description: "Count of parliament members who voted yes to support the motion."
       - name: Against
-        description: "Number of members who voted against"
+        description: "Count of parliament members who voted no to oppose the motion."
       - name: Neutral
-        description: "Number of members who voted neutral"
+        description: "Count of parliament members who abstained from voting on the motion."
+
   - name: DimWeather
-    description: "Dimension table of the weather, each row corresponds to aggregated weather data over 6h before the voting"
+    description: "Weather dimension capturing aggregated meteorological conditions over the 6-hour window before each voting session. Used for analyzing weather impact on parliamentary activity."
     columns:
       - name: WeatherId
-        description: "Unique identifier for each weather row"
-        tests:
+        description: "Unique surrogate key for each weather observation period."
+        data_tests:
           - unique
+          - not_null
       - name: StartTime
-        description: "Start time of the weather timespan"
+        description: "Start timestamp of the 6-hour weather observation window."
       - name: EndTime
-        description: "End time of the weather timespan"
+        description: "End timestamp of the 6-hour weather observation window."
       - name: AvgTemp
-        description: "Average temperature over 6h"
+        description: "Mean temperature in Celsius averaged over the 6-hour period."
       - name: HighTemp
-        description: "Highest temperature over 6h"
+        description: "Maximum temperature in Celsius recorded during the 6-hour period."
       - name: LowTemp
-        description: "Lowest temperature over 6h"
+        description: "Minimum temperature in Celsius recorded during the 6-hour period."
       - name: AvgPrecipitation
-        description: "Average precipitation over 6h"
+        description: "Mean precipitation in millimeters averaged over the 6-hour period."
       - name: MaxPrecipitation
-        description: "Max precipitation over 6h"
+        description: "Peak precipitation in millimeters during the 6-hour period."
       - name: AvgWindSpeed
-        description: "Average wind speed"
+        description: "Mean wind speed in meters per second over the 6-hour period."
       - name: MaxWindSpeed
-        description: "Maximum wind speed"
+        description: "Peak wind speed in meters per second during the 6-hour period."
+      - name: AvgCloudiness
+        description: "Mean cloud coverage percentage over the 6-hour period."
+
   - name: DimDate
-    description: "Dimension table for dates"
+    description: "Calendar dimension providing date attributes for time-based analysis of voting patterns across weekdays, months, seasons, and holidays."
     columns:
       - name: Date
-        description: "The date"
-        tests:
+        description: "Primary key representing a unique calendar date in YYYY-MM-DD format."
+        data_tests:
           - unique
+          - not_null
       - name: WeekDay
-        description: "Day of the week"
+        description: "Name of the day of the week (Monday through Sunday)."
       - name: HolidayInd
-        description: "Indicator if it's a holiday"
+        description: "Boolean flag indicating whether this date is an official public holiday."
       - name: HolidayDesc
-        description: "Description of the holiday"
+        description: "Name or description of the holiday if applicable, otherwise empty."
       - name: Year
-        description: "Year of the date"
+        description: "Four-digit calendar year."
       - name: Month
-        description: "Month of the date"
+        description: "Calendar month as a number from 1 (January) to 12 (December)."
       - name: Season
-        description: "Season of the year"
+        description: "Meteorological season: Winter, Spring, Summer, or Autumn."
+
   - name: DimVotingType
-    description: "Dimension table for voting types"
+    description: "Voting type dimension categorizing different kinds of parliamentary votes for trend analysis."
     columns:
       - name: VotingType
-        description: "Unique identifier for voting type"
-        tests:
+        description: "Unique surrogate key identifying each voting category."
+        data_tests:
           - unique
+          - not_null
       - name: VotingTypeDesc
-        description: "Description of the voting type"
+        description: "Human-readable label describing the voting category."
