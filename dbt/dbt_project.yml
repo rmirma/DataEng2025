@@ -9,6 +9,6 @@ target-path: "target"
 clean-targets: ["target"]
 
 models:
-  gold:
+  marts:
     +schema: "gold"
     +materialized: table
