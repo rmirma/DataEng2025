@@ -39,10 +39,7 @@ def create_namespace_if_not_exists(catalog, namespace):
         print(f"Namespace '{namespace}' already exists or failed to create: {e}")
 
 
-# -------------------------------------------------------------
-# ✔ This is your exact original load_csv_to_iceberg function
-# ✔ Only one added line: return table_identifier   (for XCom)
-# -------------------------------------------------------------
+ 
 def load_csv_to_iceberg():
 
     catalog = load_catalog(
@@ -92,14 +89,11 @@ def load_csv_to_iceberg():
 
     table.append(arrow_table)
     print("Data appended successfully.")
-
-    # REQUIRED for ClickHouse task
+ 
     return table_identifier
 
 
-# -------------------------------------------------------------
-# ClickHouse table creation
-# -------------------------------------------------------------
+ 
 def create_clickhouse_iceberg_table(ti):
     table_identifier = ti.xcom_pull(task_ids="load_csv_to_iceberg")
 
@@ -111,7 +105,7 @@ def create_clickhouse_iceberg_table(ti):
         database="default"
     )
 
-    # Construct full S3 path to the Iceberg table
+ 
     s3_path = f"s3://warehouse/{table_identifier.split('.')[-1]}"
 
     sql = f"""
@@ -129,9 +123,7 @@ def create_clickhouse_iceberg_table(ti):
     client.execute(sql)
     print(f"ClickHouse table for Iceberg '{table_identifier}' created.")
 
-# -------------------------------------------------------------
-# DAG definition
-# -------------------------------------------------------------
+ 
 default_args = {
     "owner": "data-eng",
     "depends_on_past": False,
