@@ -30,6 +30,7 @@ services:
   airflow-webserver:
     build: .
     container_name: airflow-webserver
+    user: "${AIRFLOW_UID:-50000}:0"
     command: webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -45,6 +46,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
+      - ./dbt:/opt/airflow/dbt
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -56,6 +58,7 @@ services:
   airflow-scheduler:
     build: .
     container_name: airflow-scheduler
+    user: "${AIRFLOW_UID:-50000}:0"
     command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -67,6 +70,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
+      - ./dbt:/opt/airflow/dbt
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -78,6 +82,7 @@ services:
   airflow-init:
     build: .
     container_name: airflow-init
+    user: "${AIRFLOW_UID:-50000}:0"
     entrypoint: /bin/bash
     command:
       - -c
