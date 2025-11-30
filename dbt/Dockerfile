@@ -8,4 +8,4 @@ RUN pip install --no-cache-dir dbt-core dbt-clickhouse clickhouse-connect
 
 # keep working dir minimal; volumes will handle your project
 WORKDIR /dbt
-ENTRYPOINT ["bash"]
+CMD ["bash"]

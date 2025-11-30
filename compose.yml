@@ -146,7 +146,8 @@ services:
       - ./sql:/sql                                  # Shared SQL scripts
       - ./dbt:/dbt                                  # Mount local dbt project directory
     working_dir: /dbt         # Set dbt project directory as the working directory
-    tty: true                  # Keep container running for interactive dbt commands
+    command: ["dbt", "run"]   # Auto-run dbt models on startup
+    restart: "no"             # Don't restart after dbt completes
 # Optional one-shot initializer to fix permissions (not needed with Docker volume)
 # clickhouse-init can be removed when using Docker volumes
 
