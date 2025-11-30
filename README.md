@@ -60,6 +60,11 @@ docker compose --profile openmetadata up -d
 
 ---
 
+## Clickhouse users:
+Username: user_full, password: user_full
+Username: user_limited, password: user_limited
+
+
 ## Superset - Connect to ClickHouse
 1. Go to **Settings → Database Connections → + Database**
 2. Select **ClickHouse Connect**
