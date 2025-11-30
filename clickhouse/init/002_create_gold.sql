@@ -39,7 +39,7 @@ ENGINE = MergeTree
 ORDER BY WeatherId;
 
 
-CREATE TABLE IF NOT EXISTS gold.Voting
+CREATE TABLE IF NOT EXISTS gold.FactVoting
 (
     VotingId UInt64,
     VotingSrcId String,
