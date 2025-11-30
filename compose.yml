@@ -1,3 +1,8 @@
+networks:
+  iceberg_network:
+    driver: bridge
+
+
 services:
   # --- Airflow metadata database ---
   airflow-db:
@@ -14,6 +19,8 @@ services:
       interval: 10s
       retries: 5
     restart: always
+    networks:
+      iceberg_network:
 
   # --- pgAdmin UI ---
   pgadmin:
@@ -25,6 +32,8 @@ services:
       - "5050:80"
     depends_on:
       - airflow-db
+    networks:
+      iceberg_network:
 
   # --- Airflow Webserver ---
   airflow-webserver:
@@ -33,6 +42,9 @@ services:
     user: "${AIRFLOW_UID:-50000}:0"
     command: webserver
     environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
@@ -53,6 +65,8 @@ services:
       airflow-db:
         condition: service_healthy
     restart: always
+    networks:
+      iceberg_network:
 
   # --- Airflow Scheduler ---
   airflow-scheduler:
@@ -77,6 +91,8 @@ services:
       airflow-db:
         condition: service_healthy
     restart: always
+    networks:
+      iceberg_network:
 
   # --- Airflow DB initialization & user setup ---
   airflow-init:
@@ -107,6 +123,8 @@ services:
       airflow-db:
         condition: service_healthy
     restart: "no"
+    networks:
+      iceberg_network:
 
   # --- ClickHouse Server ---
   # One-shot initializer to fix permissions on the host-mounted ClickHouse data
@@ -147,6 +165,8 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+    networks:
+      iceberg_network:
 
   dbt:
     # dbt container for building and testing ClickHouse models
@@ -165,6 +185,8 @@ services:
     restart: "no" # Don't restart after dbt completes
   # Optional one-shot initializer to fix permissions (not needed with Docker volume)
   # clickhouse-init can be removed when using Docker volumes
+    networks:
+      iceberg_network:
 
 
   # ============================================
@@ -179,6 +201,8 @@ services:
     volumes:
       - superset-redis-data:/data
     restart: always
+    networks:
+      iceberg_network:
 
   # --- PostgreSQL for Superset metadata ---
   superset-db:
@@ -196,6 +220,8 @@ services:
       interval: 10s
       retries: 5
     restart: always
+    networks:
+      iceberg_network:
 
   # --- Superset initialization ---
   superset-init:
@@ -219,6 +245,8 @@ services:
     healthcheck:
       disable: true
     restart: "no"
+    networks:
+      iceberg_network:
 
   # --- Superset App ---
   superset:
@@ -242,6 +270,8 @@ services:
       - superset-home:/app/superset_home
       - ./superset/docker:/app/docker:ro
     restart: always
+    networks:
+      iceberg_network:
 
   # --- Superset Celery Worker ---
   superset-worker:
@@ -263,6 +293,8 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME" ]
     restart: always
+    networks:
+      iceberg_network:
 
   # --- Superset Celery Beat ---
   superset-worker-beat:
@@ -284,6 +316,8 @@ services:
     healthcheck:
       disable: true
     restart: always
+    networks:
+      iceberg_network:
 
   # ============================================
   # OPENMETADATA SERVICES (optional - use profile)
@@ -309,6 +343,8 @@ services:
       timeout: 10s
       retries: 5
     restart: always
+    networks:
+      iceberg_network:
 
   # --- MySQL for OpenMetadata ---
   mysql:
@@ -328,6 +364,8 @@ services:
       timeout: 10s
       retries: 10
     restart: always
+    networks:
+      iceberg_network:
 
   # --- OpenMetadata Migration ---
   openmetadata-migrate:
@@ -375,6 +413,8 @@ services:
       mysql:
         condition: service_healthy
     restart: "no"
+    networks:
+      iceberg_network:
 
   # --- OpenMetadata Server ---
   openmetadata-server:
@@ -431,6 +471,8 @@ services:
       timeout: 10s
       retries: 5
     restart: always
+    networks:
+      iceberg_network:
 
   # --- OpenMetadata Ingestion (Airflow) ---
   openmetadata-ingestion:
@@ -466,7 +508,50 @@ services:
       - ingestion-volume-dags:/opt/airflow/dags
       - ingestion-volume-tmp:/tmp
     restart: always
+    networks:
+      iceberg_network:
 
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: minio
+    ports:
+      - "9005:9000"   
+      - "9001:9001"    
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio_data:/data
+    networks:
+      iceberg_network:
+        aliases:
+          - minio
+
+
+  iceberg_rest:
+    image: tabulario/iceberg-rest:1.6.0
+    container_name: iceberg_rest
+    ports:
+      - "8181:8181"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT: http://minio:9000
+
+      CATALOG__REST__URI: http://iceberg_rest:8181/
+      CATALOG__REST__WAREHOUSE: s3://warehouse/
+      CATALOG__REST__IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG__REST__S3__ENDPOINT: http://minio:9000
+      CATALOG__REST__S3__ACCESS-KEY-ID: minioadmin
+      CATALOG__REST__S3__SECRET-ACCESS-KEY: minioadmin
+
+    depends_on:
+      - minio
+    networks:
+      iceberg_network:
 volumes:
   # Docker-managed volume replaces the Windows-mounted folder
   clickhouse_data:

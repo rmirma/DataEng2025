@@ -32,4 +32,5 @@ sql/
 *.iml
 Thumbs.db
 
+/minio_data
 
