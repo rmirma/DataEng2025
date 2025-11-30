@@ -9,7 +9,6 @@ target-path: "target"
 clean-targets: ["target"]
 
 models:
-  parliament:
-    gold:
-      +schema: "gold"
-      +materialized: table
+  marts:
+    +schema: "gold"
+    +materialized: table
