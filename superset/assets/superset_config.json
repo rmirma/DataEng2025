@@ -1,0 +1,64 @@
+{
+  "databases": [
+    {
+      "database_name": "ClickHouse Riigikogu",
+      "sqlalchemy_uri": "clickhousedb://clickhouse:clickhouse@clickhouse-server:8123/gold",
+      "extra": {
+        "allows_virtual_table_explore": true
+      },
+      "expose_in_sqllab": true,
+      "allow_ctas": false,
+      "allow_cvas": false,
+      "allow_dml": false
+    }
+  ],
+  "datasets": [
+    {
+      "table_name": "Voting",
+      "database_name": "ClickHouse Riigikogu",
+      "schema": "gold",
+      "description": "Central fact table containing all Riigikogu voting events"
+    },
+    {
+      "table_name": "DimWeather",
+      "database_name": "ClickHouse Riigikogu",
+      "schema": "gold",
+      "description": "Weather dimension table with Tallinn-Harku 6-hour aggregated meteorological data"
+    },
+    {
+      "table_name": "DimDate",
+      "database_name": "ClickHouse Riigikogu",
+      "schema": "gold",
+      "description": "Date dimension table with calendar attributes and Estonian holidays"
+    },
+    {
+      "table_name": "DimVotingType",
+      "database_name": "ClickHouse Riigikogu",
+      "schema": "gold",
+      "description": "Voting type dimension table from Riigikogu API"
+    }
+  ],
+  "dashboards": [
+    {
+      "dashboard_title": "Riigikogu Voting Analysis",
+      "description": "Analysis of Estonian Parliament voting patterns with Tallinn weather correlation",
+      "charts": [
+        {
+          "slice_name": "Voting Attendance Over Time",
+          "viz_type": "line",
+          "description": "Track Riigikogu attendance trends"
+        },
+        {
+          "slice_name": "Votes by Season",
+          "viz_type": "pie",
+          "description": "Distribution of votes across seasons"
+        },
+        {
+          "slice_name": "Weather Impact on Attendance",
+          "viz_type": "scatter",
+          "description": "Correlation between Tallinn weather conditions and attendance"
+        }
+      ]
+    }
+  ]
+}

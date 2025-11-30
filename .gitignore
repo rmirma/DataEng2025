@@ -10,7 +10,11 @@ pgdata_airflow/
 airflow.db
 airflow.cfg
 webserver_config.py
-#dbt_project/
+
+# --- dbt ---
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
 
 # --- Docker volumes ---
 clickhouse_data/

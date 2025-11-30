@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS gold.DimWeather
 (
 	WeatherId UInt64,
 	StartTime DateTime,
-	EndTime Decimal(5,2),
+	EndTime DateTime,
 	AvgTemp Decimal(5,2),
 	HighTemp Decimal(5,2),
 	LowTemp Decimal(5,2),

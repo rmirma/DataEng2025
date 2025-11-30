@@ -1,0 +1,161 @@
+{
+  "database_service": {
+    "name": "clickhouse-riigikogu",
+    "serviceType": "Clickhouse",
+    "description": "ClickHouse data warehouse for Estonian Parliament (Riigikogu) voting data analysis with Tallinn weather correlation",
+    "connection": {
+      "config": {
+        "type": "Clickhouse",
+        "hostPort": "clickhouse-server:8123",
+        "username": "clickhouse",
+        "password": "clickhouse",
+        "databaseSchema": "gold"
+      }
+    }
+  },
+  "databases": [
+    {
+      "name": "gold",
+      "description": "Gold layer containing fact and dimension tables for Riigikogu voting analysis. This is the presentation layer optimized for analytical queries and BI tools."
+    },
+    {
+      "name": "parliament_data",
+      "description": "Bronze layer containing raw parliament voting data ingested from the Riigikogu API (api.riigikogu.ee)."
+    },
+    {
+      "name": "weather_data",
+      "description": "Bronze layer containing raw weather data from Tallinn-Harku meteorological station (2004-2024)."
+    }
+  ],
+  "tables": {
+    "gold": {
+      "FactVoting": {
+        "description": "Central fact table containing all Riigikogu (Estonian Parliament) voting events. Each row represents a single voting session with metrics like attendance, vote counts, and references to dimension tables for weather conditions and date attributes.",
+        "columns": {
+          "VotingId": "Unique surrogate key for each voting record (cityHash64 of uuid)",
+          "VotingSrcId": "Original voting UUID from the Riigikogu API source system",
+          "VotingType": "Foreign key reference to DimVotingType dimension table (type_code from API)",
+          "WeatherId": "Foreign key reference to DimWeather dimension table, linking Tallinn weather conditions during the voting",
+          "Date": "Foreign key reference to DimDate dimension table",
+          "StartTime": "Timestamp when the voting session began",
+          "EndTime": "Timestamp when the voting session concluded",
+          "VotingDescription": "Official description/title of the voting topic from Riigikogu records",
+          "Present": "Count of Riigikogu members physically present during the vote",
+          "Absent": "Count of Riigikogu members who were absent during the vote",
+          "InFavour": "Count of Riigikogu members who voted YES/in favor of the motion",
+          "Against": "Count of Riigikogu members who voted NO/against the motion",
+          "Neutral": "Count of Riigikogu members who abstained or voted neutral",
+          "Abstained": "Count of Riigikogu members who explicitly abstained from voting"
+        }
+      },
+      "DimWeather": {
+        "description": "Weather dimension table containing aggregated meteorological data from Tallinn-Harku station. Each record represents a 6-hour time window, used to analyze potential correlation between weather conditions and parliamentary voting patterns.",
+        "columns": {
+          "WeatherId": "Unique surrogate key for each weather record",
+          "StartTime": "Start timestamp of the 6-hour weather aggregation window",
+          "EndTime": "End timestamp of the 6-hour weather aggregation window",
+          "AvgTemp": "Average temperature in Celsius during the 6-hour period",
+          "HighTemp": "Maximum temperature in Celsius recorded during the period",
+          "LowTemp": "Minimum temperature in Celsius recorded during the period",
+          "AvgPrecipitation": "Average precipitation in mm during the 6-hour period",
+          "MaxPrecipitation": "Maximum precipitation intensity in mm recorded during the period",
+          "AvgWindSpeed": "Average wind speed in m/s during the period",
+          "MaxWindSpeed": "Maximum wind gust speed in m/s recorded during the period"
+        }
+      },
+      "DimDate": {
+        "description": "Date dimension table providing calendar attributes for time-based analysis. Enables slicing and dicing voting data by various time hierarchies and identifying patterns around Estonian holidays.",
+        "columns": {
+          "Date": "Primary key - the calendar date in YYYY-MM-DD format",
+          "WeekDay": "Day of the week (Monday=1 through Sunday=7)",
+          "HolidayInd": "Boolean indicator: 1 if the date is an Estonian public holiday, 0 otherwise",
+          "HolidayDesc": "Name/description of the Estonian holiday if HolidayInd=1, NULL otherwise",
+          "Year": "Four-digit year extracted from the date",
+          "Month": "Month number (1-12) extracted from the date",
+          "Season": "Season classification: Spring, Summer, Autumn, or Winter"
+        }
+      },
+      "DimVotingType": {
+        "description": "Voting type dimension table categorizing different types of Riigikogu votes. Used to analyze voting patterns across different procedural categories.",
+        "columns": {
+          "VotingType": "Primary key - unique code identifying the voting type (from Riigikogu API type.code)",
+          "VotingTypeDesc": "Human-readable description of the voting type category (from Riigikogu API type.value)"
+        }
+      }
+    }
+  },
+  "glossary": {
+    "name": "Riigikogu Data Glossary",
+    "description": "Business glossary for Estonian Parliament (Riigikogu) voting data warehouse terms",
+    "terms": [
+      {
+        "name": "Riigikogu",
+        "description": "The unicameral parliament of Estonia, consisting of 101 members elected for four-year terms"
+      },
+      {
+        "name": "Voting Session",
+        "description": "A formal Riigikogu procedure where members cast votes on proposed legislation, motions, or amendments"
+      },
+      {
+        "name": "Sitting",
+        "description": "A parliamentary session during which multiple votings may occur, identified by sitting_title and sitting_date in the source data"
+      },
+      {
+        "name": "Tallinn-Harku",
+        "description": "The meteorological observation station near Tallinn providing weather data for this analysis"
+      },
+      {
+        "name": "Bronze Layer",
+        "description": "Raw data layer containing unprocessed data directly from source systems (Riigikogu API, Tallinn-Harku weather Excel)"
+      },
+      {
+        "name": "Gold Layer",
+        "description": "Presentation layer containing cleansed, transformed, and aggregated data optimized for analytical queries"
+      }
+    ]
+  },
+  "dashboard_service": {
+    "name": "superset-riigikogu",
+    "serviceType": "Superset",
+    "description": "Apache Superset dashboards for Estonian Parliament (Riigikogu) voting data visualization and weather correlation analysis",
+    "connection": {
+      "config": {
+        "type": "Superset",
+        "hostPort": "http://superset:8088",
+        "connection": {
+          "provider": "db",
+          "username": "admin",
+          "password": "admin"
+        }
+      }
+    }
+  },
+  "dashboards": [
+    {
+      "name": "riigikogu-voting-analysis",
+      "displayName": "Riigikogu Voting & Weather Analysis",
+      "description": "Analytics dashboard exploring the correlation between weather conditions and Estonian Parliament (Riigikogu) voting patterns. Answers business questions: How do temperature, precipitation, and wind affect parliamentary attendance and voting consensus? How does the day of the week influence voting behavior?",
+      "sourceUrl": "http://localhost:8088/superset/dashboard/1/",
+      "charts": [
+        {
+          "name": "temperature-vs-attendance",
+          "displayName": "Temperature vs Attendance Rate",
+          "description": "Scatter plot with trendline showing correlation between average temperature (AvgTemp from DimWeather) and attendance rate (Present/101). Answers: Does warmer weather lead to higher attendance?",
+          "chartType": "Scatter"
+        },
+        {
+          "name": "weather-consensus-heatmap",
+          "displayName": "Weather Conditions vs Consensus Rate",
+          "description": "Heatmap showing consensus rate (max(InFavour,Against,Neutral)/Total) across temperature ranges and precipitation levels. Answers: Is consensus higher when weather is pleasant?",
+          "chartType": "Other"
+        },
+        {
+          "name": "weekday-attendance-bar",
+          "displayName": "Attendance by Day of Week",
+          "description": "Bar chart showing average attendance rate grouped by WeekDay from DimDate. Answers: Which days have highest/lowest parliamentary attendance?",
+          "chartType": "Bar"
+        }
+      ]
+    }
+  ]
+}

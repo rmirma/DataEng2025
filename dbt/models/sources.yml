@@ -5,16 +5,18 @@ sources:
     database: weather_data
     tables:
       - name: historic
-        description: "Historic weather data"
+        description: "Historic weather data from Tallinn-Harku station"
 
   - name: bronze_voting
     database: parliament_data
     tables:
       - name: votings
-        description: "Voting results"
+        description: "Voting results from Riigikogu API"
 
   - name: bronze
     database: bronze
     tables: 
       - name: weather_raw
-        description: "Calendar data"
+        description: "Raw weather data from Tallinn-Harku station"
+      - name: date_raw
+        description: "Calendar data with dates and Estonian holidays"

@@ -7,7 +7,7 @@
 SELECT
 	cityHash64(v.uuid) AS VotingId,
     v.uuid AS VotingSrcId,
-    toInt32(v.type_code) AS VotingType,
+    toInt32(cityHash64(v.type_code) % 2147483647) AS VotingType,
     cityHash64(v.uuid) AS WeatherId,
     toDate(v.start_date_time) AS Date,
     v.start_date_time AS StartTime,
@@ -19,7 +19,7 @@ SELECT
 	v.against AS Against,
 	v.neutral AS Neutral,
 	v.abstained AS Abstained
-FROM  {{ source('bronze_voting', 'voting') }} AS v
+FROM  {{ source('bronze_voting', 'votings') }} AS v
 
 {% if is_incremental() %}
 WHERE v.start_date_time > (SELECT max(StartTime) FROM {{ this }})

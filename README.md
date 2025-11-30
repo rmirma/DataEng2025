@@ -3,41 +3,123 @@
 # Impact of Weather on Estonian Parliamentary Sittings
 
 ## Setup Instructions
-1. **Clone the repository**  
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
 
-2. **Modify values in `.env` as needed:**
+### 1. Clone the repository
+```bash
+git clone <repository-url>
+cd <repository-directory>
+```
 
-3. **Build and start the Docker containers:**    
-   ```bash
-   docker-compose up --build -d
-   ```
+### 2. Modify values in `.env` as needed
 
-4. **Initialize the database schema with airflow-init**  
-   ```bash
-   docker-compose up airflow-init
-   ```
+### 3. Start Core Services (Airflow + ClickHouse + dbt)
+```bash
+docker compose up -d
+```
 
-5. **Access Airflow UI:**  
-   Open your web browser and navigate to `http://localhost:8080`.
-   Default credentials:
-   - Username: `airflow`
-   - Password: `airflow`
-6. **Trigger the DAGs:**  
-   In the Airflow UI, locate the DAGs and trigger them to start the data ingestion process.
+This starts the essential services:
+- **Airflow** (webserver, scheduler, postgres) - for orchestrating data pipelines
+- **ClickHouse** - data warehouse
+- **dbt** - data transformations
+- **pgAdmin** - database management UI
 
-7. **Access the database:**  
-   Open web browser and navigate to `http://localhost:5050` to access pgAdmin for PostgreSQL database management. 
-   Default credentials:
-   - Email: `admin@example.com`
-   - Password: `admin`
-   Connect to the PostgreSQL server using (default credentials):
-   - Hostname: `airflow-db`
-   - Username: `airflow`
-   - Password: `airflow`
+### 4. Access Airflow and Run DAGs
+Open http://localhost:8080 (credentials: `airflow` / `airflow`)
+
+Run DAGs in this order:
+1. `parliamentary_ingestion_dag` - ingests parliament voting data
+2. `weather_ingestion_dag` - ingests weather data  
+3. `transformation_dag` - runs dbt transformations (requires dbt sources to be configured)
+
+### 5. Start Superset for Data Visualization
+```bash
+docker compose --profile superset up -d
+```
+
+### 6. Start OpenMetadata for Data Catalog
+```bash
+docker compose --profile openmetadata up -d
+```
+
+### 7. (Optional) Start All Services
+```bash
+docker compose --profile full up -d
+```
+
+**Note:** Running all services requires significant system resources. If you experience system slowdowns, use the profile-based approach above.
+
+---
+
+## Service Access
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Airflow | http://localhost:8080 | `airflow` / `airflow` |
+| ClickHouse | http://localhost:8123 | `clickhouse` / `clickhouse` |
+| pgAdmin | http://localhost:5050 | `admin@example.com` / `admin` |
+| Superset | http://localhost:8088 | `admin` / `admin` |
+| OpenMetadata | http://localhost:8585 | `admin` / `admin` |
+
+---
+
+## Superset - Connect to ClickHouse
+1. Go to **Settings → Database Connections → + Database**
+2. Select **ClickHouse Connect**
+3. In the bottom, select and Use SQLAlchemy URI: `clickhousedb://clickhouse:clickhouse@clickhouse-server:8123/gold`
+
+## OpenMetadata - Register ClickHouse Tables
+1. Go to **Settings → Services → Databases → Add New Service**
+2. Select **ClickHouse** and configure:
+   - Host: `clickhouse-server`
+   - Port: `8123`
+   - Username: `clickhouse`
+   - Database: `gold`
+3. Run metadata ingestion to discover tables
+
+---
+
+## Pre-populate Metadata
+
+To automatically set up database connections, table descriptions, and glossary terms, run these initialization scripts after all services are healthy:
+
+```bash
+# Install Python requests library if not already available
+pip3 install requests
+
+# Initialize OpenMetadata with table descriptions and glossary
+python3 openmetadata/init/init_openmetadata.py
+
+# Initialize Superset with ClickHouse connection and datasets
+python3 superset/assets/init_superset.py
+```
+
+This will create:
+- **OpenMetadata**: Database service, table/column descriptions, and business glossary
+- **Superset**: ClickHouse database connection and dataset registrations
+
+| Script | What it creates |
+|--------|-----------------|
+| `init_openmetadata.py` | `clickhouse-riigikogu` service, `gold`/`parliament_data`/`weather_data` databases, table descriptions, "Riigikogu Data Glossary", data quality tests |
+| `init_superset.py` | `ClickHouse Riigikogu` database connection, `Voting`, `DimWeather`, `DimDate`, `DimVotingType` datasets |
+
+---
+
+## Data Quality Tests
+
+The project includes automated data quality tests defined in OpenMetadata. After running the initialization script, the following tests are available:
+
+| Test Name | Type | Table | Column | Description |
+|-----------|------|-------|--------|-------------|
+| `voting_weatherid_not_null` | NOT NULL | FactVoting | WeatherId | Ensures the foreign key to DimWeather is never null |
+| `voting_type_fk_not_null` | NOT NULL | FactVoting | VotingType | Ensures the foreign key to DimVotingType is never null |
+| `dimdate_date_unique` | UNIQUE | DimDate | Date | Ensures date dimension surrogate key is unique |
+| `voting_present_count_valid` | VALUE RANGE | FactVoting | Present | Ensures attendee count is between 0-101 (Riigikogu has 101 members) |
+
+### Data Quality Tests Screenshot
+
+
+
+---
 
 ## 1. Business Brief
 

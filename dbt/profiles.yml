@@ -5,9 +5,9 @@ parliament_clickhouse:
       type: clickhouse
       host: clickhouse-server
       port: 8123
-      user: dbt_user
-      password: dbt_password
-      schema: ""
+      user: clickhouse
+      password: clickhouse
+      schema: gold
       driver: http
       secure: false
       verify: false

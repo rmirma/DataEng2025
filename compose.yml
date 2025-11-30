@@ -10,22 +10,21 @@ services:
     volumes:
       - ./pgdata_airflow:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      test: [ "CMD-SHELL", "pg_isready -U airflow" ]
       interval: 10s
       retries: 5
     restart: always
 
-
-  # # --- pgAdmin UI for both databases ---
-  # pgadmin:
-  #   container_name: pgadmin
-  #   image: elestio/pgadmin:REL-8_10
-  #   env_file:
-  #     - .env
-  #   ports:
-  #     - "5050:80"
-  #   depends_on:
-  #     - airflow-db
+  # --- pgAdmin UI ---
+  pgadmin:
+    container_name: pgadmin
+    image: elestio/pgadmin:REL-8_10
+    env_file:
+      - .env
+    ports:
+      - "5050:80"
+    depends_on:
+      - airflow-db
 
   # --- Airflow Webserver ---
   airflow-webserver:
@@ -37,16 +36,20 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-super-secret-key-change-in-production"
+      AIRFLOW__WEBSERVER__CSRF_ENABLED: "True"
     ports:
       - "8080:8080"
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-init
-      - airflow-db
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
     restart: always
 
   # --- Airflow Scheduler ---
@@ -59,13 +62,16 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-super-secret-key-change-in-production"
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-init
-      - airflow-db
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
     restart: always
 
   # --- Airflow DB initialization & user setup ---
@@ -83,28 +89,30 @@ services:
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@example.com
+          --email admin@example.com || true
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-super-secret-key-change-in-production"
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
     depends_on:
-      - airflow-db
+      airflow-db:
+        condition: service_healthy
     restart: "no"
 
-# --- ClickHouse Server ---
+  # --- ClickHouse Server ---
   # One-shot initializer to fix permissions on the host-mounted ClickHouse data
   # directory before the server starts. This is idempotent and runs as root.
   # It helps avoid "rename: Permission denied" errors on bind mounts (dev only).
   clickhouse-init:
     image: clickhouse/clickhouse-server
     container_name: clickhouse-init
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["chown -R clickhouse:clickhouse /var/lib/clickhouse || true"]
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: [ "chown -R clickhouse:clickhouse /var/lib/clickhouse || true" ]
     volumes:
       - clickhouse_data:/var/lib/clickhouse/
     restart: "no"
@@ -126,32 +134,347 @@ services:
       - ./sample_data:/var/lib/clickhouse/user_files
       - ./sql:/sql
       - ./clickhouse/init:/docker-entrypoint-initdb.d
-
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
 
-
   dbt:
     # dbt container for building and testing ClickHouse models
     build:
-      context: .               # Build context is the current directory
-      dockerfile: dbt/Dockerfile  # Use the Dockerfile in this directory to build dbt image
+      context: . # Build context is the current directory
+      dockerfile: dbt/Dockerfile # Use the Dockerfile in this directory to build dbt image
     container_name: dbt
     depends_on:
-      - clickhouse-server      # Ensure ClickHouse starts before dbt
+      - clickhouse-server # Ensure ClickHouse starts before dbt
     volumes:
       - ./sample_data:/var/lib/clickhouse/user_files # Shared folder for input files
-      - ./sql:/sql                                  # Shared SQL scripts
-      - ./dbt:/dbt                                  # Mount local dbt project directory
-    working_dir: /dbt         # Set dbt project directory as the working directory
-    command: ["dbt", "run"]   # Auto-run dbt models on startup
-    restart: "no"             # Don't restart after dbt completes
-# Optional one-shot initializer to fix permissions (not needed with Docker volume)
-# clickhouse-init can be removed when using Docker volumes
+      - ./sql:/sql # Shared SQL scripts
+      - ./dbt:/dbt # Mount local dbt project directory
+    working_dir: /dbt # Set dbt project directory as the working directory
+    command: [ "dbt", "run" ] # Auto-run dbt models on startup
+    restart: "no" # Don't restart after dbt completes
+  # Optional one-shot initializer to fix permissions (not needed with Docker volume)
+  # clickhouse-init can be removed when using Docker volumes
+
+
+  # ============================================
+  # SUPERSET SERVICES (optional - use profile)
+  # ============================================
+
+  # --- Redis for Superset caching ---
+  superset-redis:
+    image: redis:7
+    container_name: superset-redis
+    profiles: [ "superset", "full" ]
+    volumes:
+      - superset-redis-data:/data
+    restart: always
+
+  # --- PostgreSQL for Superset metadata ---
+  superset-db:
+    image: postgres:16
+    container_name: superset-db
+    profiles: [ "superset", "full" ]
+    environment:
+      POSTGRES_USER: ${SUPERSET_DB_USER:-superset}
+      POSTGRES_PASSWORD: ${SUPERSET_DB_PASSWORD:-superset}
+      POSTGRES_DB: ${SUPERSET_DB_NAME:-superset}
+    volumes:
+      - superset-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${SUPERSET_DB_USER:-superset}" ]
+      interval: 10s
+      retries: 5
+    restart: always
+
+  # --- Superset initialization ---
+  superset-init:
+    image: apachesuperset.docker.scarf.sh/apache/superset:latest
+    container_name: superset-init
+    profiles: [ "superset", "full" ]
+    command: bash /app/docker/docker-init.sh
+    env_file:
+      - ./superset/docker/.env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
+    depends_on:
+      superset-db:
+        condition: service_healthy
+      superset-redis:
+        condition: service_started
+    user: "root"
+    volumes:
+      - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  # --- Superset App ---
+  superset:
+    image: apachesuperset.docker.scarf.sh/apache/superset:latest
+    container_name: superset-app
+    profiles: [ "superset", "full" ]
+    command: bash /app/docker/docker-bootstrap.sh app-gunicorn
+    env_file:
+      - ./superset/docker/.env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
+    ports:
+      - "8088:8088"
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      clickhouse-server:
+        condition: service_healthy
+    user: "root"
+    volumes:
+      - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
+    restart: always
+
+  # --- Superset Celery Worker ---
+  superset-worker:
+    image: apachesuperset.docker.scarf.sh/apache/superset:latest
+    container_name: superset-worker
+    profiles: [ "superset", "full" ]
+    command: bash /app/docker/docker-bootstrap.sh worker
+    env_file:
+      - ./superset/docker/.env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    user: "root"
+    volumes:
+      - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME" ]
+    restart: always
+
+  # --- Superset Celery Beat ---
+  superset-worker-beat:
+    image: apachesuperset.docker.scarf.sh/apache/superset:latest
+    container_name: superset-worker-beat
+    profiles: [ "superset", "full" ]
+    command: bash /app/docker/docker-bootstrap.sh beat
+    env_file:
+      - ./superset/docker/.env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/docker/pythonpath_dev/superset_config.py
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    user: "root"
+    volumes:
+      - superset-home:/app/superset_home
+      - ./superset/docker:/app/docker:ro
+    healthcheck:
+      disable: true
+    restart: always
+
+  # ============================================
+  # OPENMETADATA SERVICES (optional - use profile)
+  # ============================================
+
+  # --- Elasticsearch for OpenMetadata ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    profiles: [ "openmetadata", "full" ]
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  # --- MySQL for OpenMetadata ---
+  mysql:
+    image: docker.getcollate.io/openmetadata/db:1.4.0
+    container_name: mysql
+    profiles: [ "openmetadata", "full" ]
+    command: "--sort_buffer_size=10M"
+    env_file:
+      - .env
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: mysql --user=root --password=$$MYSQL_ROOT_PASSWORD --silent --execute "use openmetadata_db"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: always
+
+  # --- OpenMetadata Migration ---
+  openmetadata-migrate:
+    image: openmetadata/server:1.4.0
+    container_name: openmetadata-migrate
+    profiles: [ "openmetadata", "full" ]
+    command: "./bootstrap/bootstrap_storage.sh migrate-all"
+    env_file:
+      - .env
+    environment:
+      OPENMETADATA_CLUSTER_NAME: openmetadata
+      SERVER_PORT: 8585
+      SERVER_ADMIN_PORT: 8586
+      LOG_LEVEL: INFO
+      AUTHORIZER_CLASS_NAME: org.openmetadata.service.security.DefaultAuthorizer
+      AUTHORIZER_REQUEST_FILTER: org.openmetadata.service.security.JwtFilter
+      AUTHORIZER_ADMIN_PRINCIPALS: "[admin]"
+      AUTHORIZER_ALLOWED_REGISTRATION_DOMAIN: '["all"]'
+      AUTHORIZER_INGESTION_PRINCIPALS: "[ingestion-bot]"
+      AUTHORIZER_PRINCIPAL_DOMAIN: "open-metadata.org"
+      AUTHORIZER_ENFORCE_PRINCIPAL_DOMAIN: "false"
+      AUTHORIZER_ENABLE_SECURE_SOCKET: "false"
+      AUTHENTICATION_PROVIDER: basic
+      AUTHENTICATION_PUBLIC_KEYS: "[http://localhost:8585/api/v1/system/config/jwks]"
+      AUTHENTICATION_AUTHORITY: "https://accounts.google.com"
+      AUTHENTICATION_CLIENT_ID: ""
+      AUTHENTICATION_CALLBACK_URL: ""
+      AUTHENTICATION_JWT_PRINCIPAL_CLAIMS: "[email,preferred_username,sub]"
+      AUTHENTICATION_ENABLE_SELF_SIGNUP: "true"
+      DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
+      DB_SCHEME: mysql
+      DB_PARAMS: "allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC"
+      DB_USER_PASSWORD: openmetadata_password
+      OM_DATABASE: openmetadata_db
+      SEARCH_TYPE: elasticsearch
+      PIPELINE_SERVICE_CLIENT_ENABLED: "true"
+      PIPELINE_SERVICE_CLIENT_ENDPOINT: "http://openmetadata-ingestion:8080"
+      PIPELINE_SERVICE_CLIENT_CLASS_NAME: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
+      SERVER_HOST_API_URL: "http://openmetadata-server:8585/api"
+      AIRFLOW_USERNAME: admin
+      AIRFLOW_PASSWORD: admin
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  # --- OpenMetadata Server ---
+  openmetadata-server:
+    image: openmetadata/server:1.4.0
+    container_name: openmetadata-server
+    profiles: [ "openmetadata", "full" ]
+    env_file:
+      - .env
+    environment:
+      OPENMETADATA_CLUSTER_NAME: openmetadata
+      SERVER_PORT: 8585
+      SERVER_ADMIN_PORT: 8586
+      LOG_LEVEL: INFO
+      AUTHORIZER_CLASS_NAME: org.openmetadata.service.security.DefaultAuthorizer
+      AUTHORIZER_REQUEST_FILTER: org.openmetadata.service.security.JwtFilter
+      AUTHORIZER_ADMIN_PRINCIPALS: "[admin]"
+      AUTHORIZER_ALLOWED_REGISTRATION_DOMAIN: '["all"]'
+      AUTHORIZER_INGESTION_PRINCIPALS: "[ingestion-bot]"
+      AUTHORIZER_PRINCIPAL_DOMAIN: "open-metadata.org"
+      AUTHORIZER_ENFORCE_PRINCIPAL_DOMAIN: "false"
+      AUTHORIZER_ENABLE_SECURE_SOCKET: "false"
+      AUTHENTICATION_PROVIDER: basic
+      AUTHENTICATION_PUBLIC_KEYS: "[http://localhost:8585/api/v1/system/config/jwks]"
+      AUTHENTICATION_AUTHORITY: "https://accounts.google.com"
+      AUTHENTICATION_CLIENT_ID: ""
+      AUTHENTICATION_CALLBACK_URL: ""
+      AUTHENTICATION_JWT_PRINCIPAL_CLAIMS: "[email,preferred_username,sub]"
+      AUTHENTICATION_ENABLE_SELF_SIGNUP: "true"
+      DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
+      DB_SCHEME: mysql
+      DB_PARAMS: "allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC"
+      DB_USER_PASSWORD: openmetadata_password
+      OM_DATABASE: openmetadata_db
+      SEARCH_TYPE: elasticsearch
+      PIPELINE_SERVICE_CLIENT_ENABLED: "true"
+      PIPELINE_SERVICE_CLIENT_ENDPOINT: "http://openmetadata-ingestion:8080"
+      PIPELINE_SERVICE_CLIENT_CLASS_NAME: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
+      SERVER_HOST_API_URL: "http://openmetadata-server:8585/api"
+      AIRFLOW_USERNAME: admin
+      AIRFLOW_PASSWORD: admin
+    ports:
+      - "8585:8585"
+      - "8586:8586"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      openmetadata-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://localhost:8585/api/v1/system/version || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  # --- OpenMetadata Ingestion (Airflow) ---
+  openmetadata-ingestion:
+    image: docker.getcollate.io/openmetadata/ingestion:1.4.0
+    container_name: openmetadata-ingestion
+    profiles: [ "openmetadata", "full" ]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      openmetadata-server:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_GENERATED_CONFIGS: "/opt/airflow/dag_generated_configs"
+      DB_HOST: mysql
+      DB_PORT: 3306
+      AIRFLOW_DB: airflow_db
+      DB_SCHEME: mysql+mysqldb
+      DB_USER: airflow_user
+      DB_PASSWORD: airflow_pass
+    entrypoint: /bin/bash
+    command:
+      - "/opt/airflow/ingestion_dependency.sh"
+    expose:
+      - 8080
+    ports:
+      - "8081:8080"
+    volumes:
+      - ingestion-volume-dag-airflow:/opt/airflow/dag_generated_configs
+      - ingestion-volume-dags:/opt/airflow/dags
+      - ingestion-volume-tmp:/tmp
+    restart: always
 
 volumes:
   # Docker-managed volume replaces the Windows-mounted folder
   clickhouse_data:
   pgdata_airflow:
+  airflow-logs:
+
+  superset-redis-data:
+  superset-db-data:
+  superset-home:
+
+  es-data:
+  mysql-data:
+  ingestion-volume-dag-airflow:
+  ingestion-volume-dags:
+  ingestion-volume-tmp:
