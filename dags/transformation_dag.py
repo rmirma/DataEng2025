@@ -24,9 +24,11 @@ with DAG(
 
     # Run dbt transformations
     # The dbt project is mounted at /opt/airflow/dbt
+    # Use --log-path and --target-path to /tmp to avoid permission conflicts
+    # with directories that may have been created by other containers
     dbt_transform_task = BashOperator(
         task_id="dbt_transform",
-        bash_command="cd /opt/airflow/dbt && dbt run --profiles-dir /opt/airflow/dbt",
+        bash_command="cd /opt/airflow/dbt && dbt run --profiles-dir /opt/airflow/dbt --log-path /tmp/dbt_logs --target-path /tmp/dbt_target",
     )
 
     dbt_transform_task
