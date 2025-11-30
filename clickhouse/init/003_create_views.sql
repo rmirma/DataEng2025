@@ -16,7 +16,7 @@ SELECT
     Against,
     Neutral,
     Abstained
-FROM gold.Voting;
+FROM gold.FactVoting;
 
 CREATE OR REPLACE VIEW views.VotingPseudo AS
 SELECT
@@ -34,7 +34,7 @@ SELECT
     SHA256(toString(Against)) AS Against,
     SHA256(toString(Neutral)) AS Neutral,
     SHA256(toString(Abstained)) AS Abstained
-FROM gold.Voting;
+FROM gold.FactVoting;
 
 
 CREATE OR REPLACE VIEW views.VotingAnalytics AS
@@ -69,7 +69,7 @@ SELECT
     v.Against,
     v.Neutral,
     v.Abstained
-FROM gold.Voting AS v
+FROM gold.FactVoting AS v
 LEFT JOIN gold.DimVotingType AS vt
     ON v.VotingType = vt.VotingType
 LEFT JOIN gold.DimWeather AS w
@@ -110,7 +110,7 @@ SELECT
     SHA256(toString(Against)) AS Against,
     SHA256(toString(Neutral)) AS Neutral,
     SHA256(toString(Abstained)) AS Abstained
-FROM gold.Voting AS v
+FROM gold.FactVoting AS v
 LEFT JOIN gold.DimVotingType AS vt
     ON v.VotingType = vt.VotingType
 LEFT JOIN gold.DimWeather AS w
