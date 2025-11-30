@@ -394,13 +394,13 @@ def create_data_quality_tests(headers, service_name):
     # Define test cases
     test_cases = {
     # Fact table: FactVoting - NOT NULL on foreign keys
-        f\"{service_name}.gold.default.FactVoting\": [
+        f"{service_name}.gold.default.FactVoting": [
             {
-                \"name\": \"voting_weatherid_not_null\",
-                \"description\": \"Ensure WeatherId foreign key in FactVoting fact table is not null\",
-                \"testDefinitionName\": \"columnValuesToBeNotNull\",
-                \"entityLink\": f\"<#E::table::{service_name}.gold.default.FactVoting::columns::WeatherId>\",
-                \"parameterValues\": []
+                "name": "voting_weatherid_not_null",
+                "description": "Ensure WeatherId foreign key in FactVoting fact table is not null",
+                "testDefinitionName": "columnValuesToBeNotNull",
+                "entityLink": f"<#E::table::{service_name}.gold.default.FactVoting::columns::WeatherId>",
+                "parameterValues": []
             },
             {
                 "name": "voting_type_fk_not_null",

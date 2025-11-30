@@ -82,7 +82,6 @@ services:
   airflow-init:
     build: .
     container_name: airflow-init
-    user: "${AIRFLOW_UID:-50000}:0"
     entrypoint: /bin/bash
     command:
       - -c

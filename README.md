@@ -41,12 +41,10 @@ docker compose --profile superset up -d
 docker compose --profile openmetadata up -d
 ```
 
-### 7. (Optional) Start All Services
+### 7. Initialize Metadata
 ```bash
-docker compose --profile full up -d
+./scripts/init_metadata.sh --all
 ```
-
-**Note:** Running all services requires significant system resources. If you experience system slowdowns, use the profile-based approach above.
 
 ---
 
@@ -75,6 +73,7 @@ docker compose --profile full up -d
    - Username: `clickhouse`
    - Database: `gold`
 3. Run metadata ingestion to discover tables
+
 
 ---
 
@@ -117,7 +116,7 @@ The project includes automated data quality tests defined in OpenMetadata. After
 
 ### Data Quality Tests Screenshot
 
-
+![OpenMetadata Quality Tests](openmetadata_quality.png)
 
 ---
 
